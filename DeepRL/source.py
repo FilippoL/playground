@@ -3,6 +3,8 @@ import os
 import random
 from collections import deque
 
+import time
+
 import gym
 import numpy as np
 import tensorflow as tf
@@ -23,7 +25,7 @@ def build_function():
             "logs",
             "fit",
             now,
-            "episode" + str(idx)
+            # "episode" + str(idx)
         )
         return log_dir
 
@@ -31,14 +33,14 @@ def build_function():
 
 time_func = build_function()
 
-N = 10000
+N = 1000
 D = list()
-discount_rate = 0.7
+discount_rate = 0.8
 
 action_space = env.action_space.n
 input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [4]
-n_episode = 10
-batch_size = 10
+n_episode = 1000
+batch_size = 100
 q_mask_shape = (batch_size, action_space)
 
 
@@ -52,16 +54,18 @@ def loss_function(next_qvalues, init_qvalues):
 def to_grayscale(img):
     return np.mean(img, axis=2).astype(np.uint8)
 
+def standardize(img):
+    return img/255
 
 def downsample(img):
     return img[::2, ::2]
 
 
 def preprocess(img):
-    return to_grayscale(downsample(img))
+    return standardize(to_grayscale(downsample(img)))
 
 
-input = layers.Input(input_shape)
+input = layers.Input(input_shape, dtype=tf.float32)
 mask = layers.Input(action_space, dtype=tf.float32)
 x = layers.Conv2D(32, (3, 3), activation="elu")(input)
 x = layers.MaxPooling2D((2, 2))(x)
@@ -80,7 +84,9 @@ out_q_values = tf.multiply(x, mask)
 model = models.Model(inputs=[input, mask], outputs=out_q_values)
 model.compile(optimizer='adam', loss=loss_function)
 
-exploration_rate = 0.1
+exploration_base = 1.01
+exploration_rate = 1
+minimal_exploration_rate = 0.01
 
 initial_state = deque(maxlen=4)
 next_state = deque(maxlen=4)
@@ -96,7 +102,14 @@ initial_state.append(initial_observation)
 
 next_state = initial_state.copy()
 
-for n in range(100):
+for n in range(N):
+    if is_done:
+        env.reset()
+        initial_observation = preprocess(env.reset())
+        initial_state.append(initial_observation)
+        initial_state.append(initial_observation)
+        initial_state.append(initial_observation)
+        initial_state.append(initial_observation)
     action = env.action_space.sample()
     next_observation, reward, is_done, _ = env.step(action)
     next_state.append(preprocess(next_observation))
@@ -105,7 +118,12 @@ for n in range(100):
     env.render()
 
 for episode in range(n_episode):
+
+    exploration_rate = np.power(exploration_base, -episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
+    print(f"Running episode {episode} with exploration rate: {exploration_rate}")
+    # print(is_done)
     initial_observation = preprocess(env.reset())
+    is_done = False
     initial_state.append(initial_observation)
     initial_state.append(initial_observation)
     initial_state.append(initial_observation)
@@ -116,28 +134,28 @@ for episode in range(n_episode):
     tensorflow_callback = tf.keras.callbacks.TensorBoard(log_dir=time_func(episode), histogram_freq=1)
 
     while not is_done:
-
         if random.choices((True, False), (exploration_rate, 1 - exploration_rate))[0]:
             action = env.action_space.sample()
         else:
             init_mask = tf.ones([1, action_space])
+            # print(init_mask)
             q_values = model.predict([tf.reshape(tf.constant(initial_state), [1] + input_shape), init_mask])
             action = np.argmax(q_values)
 
         next_observation, reward, is_done, _ = env.step(action)
-        env.render()
+
+        # print(f"Current result: {reward}, {is_done}, {_}")
+        # print("RENDER!")
         next_state.append(preprocess(next_observation))
         D.append((initial_state.copy(), reward, action, next_state.copy()))
+        env.render()
+    # time.sleep(1)
 
     experience_batch = random.sample(D, k=batch_size)
 
     # Gather initial and next state from memory for each batch item
-    # for exp in experience_batch:
-    #     print(exp[0])
     set_of_batch_initial_states = [exp[0] for exp in experience_batch]
-    # print(set_of_batch_initial_states)
     set_of_batch_initial_states = tf.reshape(set_of_batch_initial_states, [-1] + input_shape)
-
     set_of_batch_next_states = tf.constant([exp[3] for exp in experience_batch])
     set_of_batch_next_states = tf.reshape(set_of_batch_next_states, [-1] + input_shape)
 
@@ -149,18 +167,9 @@ for episode in range(n_episode):
 
     next_q_mask = tf.ones([batch_size, action_space])
     next_q_values = model.predict([set_of_batch_next_states, next_q_mask])
-    # print(next_q_values)
-    # print(tf.reduce_max(next_q_values, axis=1))
-    next_q = set_of_batch_rewards + (discount_rate * tf.reduce_max(next_q_values, axis=1))
-    # next_q = tf.reshape(next_q, [-1,1])
-    # print(f"Next value {next_q}")
-    # print(tf.reduce_max(next_q_values, axis=1).shape)
-    # print(set_of_batch_rewards.shape)
-    # print(set_of_batch_initial_states.shape)
-    # print(set_of_batch_actions.shape)
 
-    history = model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, batch_size=10,
-                        callbacks=[tensorflow_callback])
+    next_q = set_of_batch_rewards + (discount_rate * tf.reduce_max(next_q_values, axis=1))
+    history = model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback])
 
 # TODO: [x] Simplify the loss function
 # TODO: [x] Apply the reward
