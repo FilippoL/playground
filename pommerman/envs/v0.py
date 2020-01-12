@@ -265,6 +265,7 @@ class Pomme(gym.Env):
 
         if record_pngs_dir:
             self._viewer.save(record_pngs_dir)
+
         if record_json_dir:
             self.save_json(record_json_dir)
 

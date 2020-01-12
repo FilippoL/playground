@@ -62,6 +62,9 @@ class Viewer(object):
     def set_board(self, state):
         self._board_state = state
 
+    def get_buffer(self):
+        return pyglet.image.get_buffer_manager().get_color_buffer()
+
     def set_bombs(self, bombs):
         self._bombs = bombs
 
@@ -107,7 +110,6 @@ class PixelViewer(Viewer):
 
     def render(self):
         frames = self.build_frame()
-
         if self.window is None:
             height, width, _channels = frames.shape
             self.window = pyglet.window.Window(
@@ -189,7 +191,7 @@ class PixelViewer(Viewer):
 
         all_frame = np.array(all_frame)
         frames.append(all_frame)
-
+        print("fvr")
         for agent in agents:
             row, col = agent.position
             my_frame = all_frame.copy()
@@ -474,7 +476,6 @@ class ResourceManager(object):
     def tile_from_state_value(self, value):
         if self._is_team and value in range(10, 14):
             return self.images[value + 10]['image']
-
         return self.images[value]['image']
 
     def agent_image(self, agent_id):
