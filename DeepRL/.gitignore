@@ -3,6 +3,7 @@
 # Edit at https://www.gitignore.io/?templates=python,visualstudiocode
 
 logs/*
+# models/*
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
