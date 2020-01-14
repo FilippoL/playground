@@ -39,10 +39,11 @@ file_writer_rewards = tf.summary.create_file_writer(log_dir + "/metrics")
 # file_writer.set_as_default()
 
 # D = list()
-list_size = 3000
+list_size = 6000
 D = deque(maxlen=list_size)
 discount_rate = 0.8
-
+tau = 0
+max_tau = 2000
 action_space = env.action_space.n
 input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [4]
 batch_size = 200
@@ -63,8 +64,10 @@ print(f"Pixel space of the game {input_shape}")
 def to_grayscale(img):
     return np.mean(img, axis=2).astype(np.uint8)
 
+
 def standardize(img):
     return img/255
+
 
 def downsample(img):
     return img[::2, ::2]
@@ -74,31 +77,43 @@ def preprocess(img):
     return standardize(to_grayscale(downsample(img)))
 
 
-input = layers.Input(input_shape, dtype=tf.float32)
-mask = layers.Input(action_space, dtype=tf.float32)
+def create_model(input_shape, action_space):
+    input = layers.Input(input_shape, dtype=tf.float32)
+    mask = layers.Input(action_space, dtype=tf.float32)
 
-x = layers.Conv2D(16, (8, 8), strides=4, activation="relu")(input)
-# x = layers.MaxPooling2D((2, 2))(x)
-x = layers.BatchNormalization()(x)
-x = layers.Dropout(.4)(x)
+    x = layers.Conv2D(16, (8, 8), strides=4, activation="relu")(input)
+    # x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(.4)(x)
 
-x = layers.Conv2D(32, (4, 4), strides=2, activation="relu")(x)
-# x = layers.MaxPooling2D((2, 2))(x)
-x = layers.BatchNormalization()(x)
-x = layers.Dropout(.4)(x)
+    x = layers.Conv2D(32, (4, 4), strides=2, activation="relu")(x)
+    # x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(.4)(x)
 
-x = layers.Conv2D(32, (3, 3), activation="relu")(x)
-# # x = layers.MaxPooling2D((2, 2))(x)
-x = layers.BatchNormalization()(x)
-x = layers.Dropout(.4)(x)
+    x = layers.Conv2D(32, (3, 3), activation="relu")(x)
+    # # x = layers.MaxPooling2D((2, 2))(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(.4)(x)
 
-x = layers.Flatten()(x)
-x = layers.Dense(256, activation="relu")(x)
-x = layers.Dense(action_space)(x)
-out_q_values = tf.multiply(x, mask)
-# out_q_values = tf.reshape(out_q_values, [1,-1])
-model = models.Model(inputs=[input, mask], outputs=out_q_values)
-model.compile(optimizer='rmsprop', loss='mean_squared_error')
+    x = layers.Flatten()(x)
+    value_stream = layers.Dense(128, activation="relu")(x)
+    value_out = layers.Dense(1)(value_stream)
+
+    advantage_stream = layers.Dense(128, activation="relu")(x)
+    advantage_out = layers.Dense(action_space)(advantage_stream)
+    # tf.print(f"NN: {advantage_out.shape}")
+    # tf.print(f"NN: {tf.reduce_mean(advantage_out, axis=0)}")
+    output = value_out + tf.math.subtract(advantage_out, tf.reduce_mean(advantage_out, axis=1, keepdims=True))
+    out_q_values = tf.multiply(output, mask)
+    # out_q_values = tf.reshape(out_q_values, [1,-1])
+    model = models.Model(inputs=[input, mask], outputs=out_q_values)
+    model.compile(optimizer='rmsprop', loss='mean_squared_error')
+    return model
+
+
+approximator_model = create_model(input_shape, action_space)
+target_model = create_model(input_shape, action_space)
 
 exploration_base = 1.02
 exploration_rate = 1
@@ -110,7 +125,7 @@ next_state = deque(maxlen=4)
 
 initial_observation = preprocess(env.reset())
 action = env.action_space.sample()
-next_observation, reward, is_done, _ = env.step(action) # Unnecessary
+next_observation, reward, is_done, _ = env.step(action)  # Unnecessary
 
 initial_state.append(initial_observation)
 initial_state.append(initial_observation)
@@ -126,7 +141,7 @@ for n in range(N):
         env.render()
         continue
     if is_done:
-        frame_cnt=0
+        frame_cnt = 0
         env.reset()
         initial_observation = preprocess(env.reset())
         initial_state.append(initial_observation)
@@ -144,8 +159,13 @@ for n in range(N):
     env.render()
 
 for episode in range(n_episode):
+    if tau >= max_tau:
+        tau = 0
+        target_model.set_weights(approximator_model.get_weights())
+        print("===> Updated weights")
 
     exploration_rate = np.power(exploration_base, -episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
+
     # exploration_rate = 1-(episode*0.05) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
     print(f"Running episode {episode} with exploration rate: {exploration_rate}")
     # print(is_done)
@@ -156,7 +176,7 @@ for episode in range(n_episode):
     initial_state.append(initial_observation)
     initial_state.append(initial_observation)
 
-    next_state = initial_state.copy() # To remove all the information of the last episode
+    next_state = initial_state.copy()  # To remove all the information of the last episode
 
     episode_rewards = []
     episode_rewards_normalized = []
@@ -168,13 +188,14 @@ for episode in range(n_episode):
         if frame_cnt % 4 != 0:
             env.render()
             continue
+        tau += 1
         if random.choices((True, False), (exploration_rate, 1 - exploration_rate))[0]:
             action = env.action_space.sample()
         else:
             # Greedy action
             init_mask = tf.ones([1, action_space])
             # print(init_mask)
-            q_values = model.predict([tf.reshape(tf.constant(initial_state), [1] + input_shape), init_mask])
+            q_values = approximator_model.predict([tf.reshape(tf.constant(initial_state), [1] + input_shape), init_mask])
             action = np.argmax(q_values)
 
         # print(f"Chose action: {action}")
@@ -185,15 +206,15 @@ for episode in range(n_episode):
         next_observation, reward, is_done, _ = env.step(action)
 
         episode_rewards.append(reward)
-        reward = reward / np.absolute(reward) if reward != 0 else reward # Reward normalisation
-        episode_rewards_normalized.append(reward)
+        # reward = reward / np.absolute(reward) if reward != 0 else reward # Reward normalisation
+        if reward != 0:
+            print(reward)
+        # episode_rewards_normalized.append(reward)
 
         # reward = -1.0 if _['ale.lives'] < prev_lives else reward
         # reward = -2.0 if is_done else reward
         # prev_lives = _['ale.lives']
         # print(f"Current result: {reward}, {is_done}, {_}")
-        # if reward>1:
-            # print(reward)
         # print("RENDER!")
         next_state.append(preprocess(next_observation))
         # if len(D) < list_size:
@@ -203,10 +224,8 @@ for episode in range(n_episode):
         #     to_remove = D.pop(rm_idx)
         #     D.append((initial_state.copy(), reward , action, next_state.copy()))
 
-        D.append((initial_state.copy(), reward , action, next_state.copy()))
+        D.append((initial_state.copy(), reward, action, next_state.copy()))
         env.render()
-
-
 
     print(f"Number of frames in memory {len(D)}")
     # batch_size = len(D)//10
@@ -224,22 +243,25 @@ for episode in range(n_episode):
     # Gather rewards for each batch item
 
     next_q_mask = tf.ones([batch_size, action_space])
-    next_q_values = tf.constant(model.predict([set_of_batch_next_states, next_q_mask]))
+    double_q_mask = tf.one_hot(tf.argmax(approximator_model.predict([set_of_batch_next_states, next_q_mask]), axis=1), action_space)
+    # print(dueling_q_mask)
+
+    next_q_values = tf.constant(target_model.predict([set_of_batch_next_states, double_q_mask]))
     print(next_q_values.dtype)
     set_of_batch_rewards = tf.constant([exp[1] for exp in experience_batch], dtype=next_q_values.dtype)
     print(set_of_batch_rewards.dtype)
     print(sum(set_of_batch_rewards))
     # print(list(zip(set_of_batch_rewards, next_q_values)))
     next_q = set_of_batch_rewards + (discount_rate * tf.reduce_max(next_q_values, axis=1))
-    history = model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback])
-    
+    history = approximator_model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback])
+
     with file_writer_rewards.as_default():
         tf.summary.scalar('episode_rewards', np.sum(episode_rewards), step=episode)
-        tf.summary.scalar('episode_rewards_normalized', np.sum(episode_rewards_normalized), step=episode)
+        tf.summary.scalar('exploration_rate', exploration_rate, step=episode)
         tf.summary.histogram('qs', next_q_values, step=episode)
     if (episode+1) % 100 == 0:
         model_target_dir = checkpoint_path.format(epoch=episode)
-        model.save_weights(model_target_dir)
+        approximator_model.save_weights(model_target_dir)
         print(f"Model was saved under {model_target_dir}")
 
 # TODO: [x] Simplify the loss function
