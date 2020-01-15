@@ -4,6 +4,7 @@ from pommerman import agents
 import time
 from statistics import mean
 
+
 def main():
     '''Simple function to bootstrap a game.
 
@@ -21,7 +22,8 @@ def main():
         # agents.DockerAgent("pommerman/simple-agent", port=12345),
     ]
     # Make the "Free-For-All" environment using the agent list
-    env = pommerman.make('PommeFFACompetition-v0', agent_list, render_mode='human')
+    env = pommerman.make('PommeFFACompetition-v0',
+                         agent_list, render_mode='human')
 
     # Run the episodes just like OpenAI Gym
     lijst = []
@@ -35,7 +37,7 @@ def main():
             state, reward, done, info, pixels = env.step(actions)
             t1 = time.clock()
             lijst.append(t1-t0)
-            #print(pixels)
+            # print(pixels)
         print('Episode {} finished'.format(i_episode))
     print(f'Mean frametime = {mean(lijst)}')
     env.close()

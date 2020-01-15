@@ -45,6 +45,7 @@ class Viewer(object):
         Used to share common functionality between the different
         rendering engines.
      '''
+
     def __init__(self):
         self.window = None
         self.display = None
@@ -95,6 +96,7 @@ class Viewer(object):
 
 class PixelViewer(Viewer):
     '''Renders the game as a set of square pixels'''
+
     def __init__(self,
                  display=None,
                  board_size=11,
@@ -139,7 +141,7 @@ class PixelViewer(Viewer):
                 self.isopen = True
 
         assert len(frames.shape
-                  ) == 3, "You passed in an image with the wrong number shape"
+                   ) == 3, "You passed in an image with the wrong number shape"
         image = pyglet.image.ImageData(
             frames.shape[1],
             frames.shape[0],
@@ -214,6 +216,7 @@ class PixelViewer(Viewer):
 
 class PommeViewer(Viewer):
     '''The primary render engine for pommerman.'''
+
     def __init__(self,
                  display=None,
                  board_size=11,
@@ -265,13 +268,14 @@ class PommeViewer(Viewer):
         if show:
             self.window.flip()
 
-        #Retrieve raw pixel byte stream
+        # Retrieve raw pixel byte stream
         rawimage = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
         format = 'RGBA'
         pitch = rawimage.width * len(format)
-        pixels = rawimage.get_data(format, pitch) #4 bytes per pixel RGBA
+        pixels = rawimage.get_data(format, pitch)  # 4 bytes per pixel RGBA
 
-        image = Image.frombytes('RGBA', (self.window.width,self.window.height), pixels, 'raw').convert('L') # THE IMAGE
+        image = Image.frombytes(
+            'RGBA', (self.window.width, self.window.height), pixels, 'raw').convert('L')  # THE IMAGE
 
         # To show image
         # plt.ion()
@@ -316,7 +320,8 @@ class PommeViewer(Viewer):
                     bomb_life = self.get_bomb_life(row, col)
                     tile = self._resource_manager.get_bomb_tile(bomb_life)
                 else:
-                    tile = self._resource_manager.tile_from_state_value(tile_state)
+                    tile = self._resource_manager.tile_from_state_value(
+                        tile_state)
                 tile.width = size
                 tile.height = size
                 sprite = pyglet.sprite.Sprite(
@@ -395,7 +400,7 @@ class PommeViewer(Viewer):
         if self._game_type is constants.GameType.FFA or self._game_type is constants.GameType.OneVsOne:
             agents = self._agents
         else:
-            agents = [self._agents[i] for i in [0,2,1,3]]
+            agents = [self._agents[i] for i in [0, 2, 1, 3]]
 
         for index, agent in enumerate(agents):
             # weird math to make sure the alignment
@@ -442,6 +447,7 @@ class PommeViewer(Viewer):
 
 class ResourceManager(object):
     '''Handles sprites and other resources for the PommeViewer'''
+
     def __init__(self, game_type):
         self._index_resources()
         self._load_fonts()
