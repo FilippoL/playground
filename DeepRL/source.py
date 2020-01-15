@@ -45,7 +45,7 @@ file_writer_qs = tf.summary.create_file_writer(log_dir + "/metrics")
 # file_writer.set_as_default()
 
 # D = list()
-list_size = 60000
+list_size = 6000
 D = deque(maxlen=list_size)
 # D = RingBuf(list_size)
 discount_rate = 0.8
@@ -86,14 +86,15 @@ def downsample(img):
 def preprocess(img):
     return standardize(to_grayscale(downsample(img)))
 
+
 def collect_experience(env, action, state_shape, time_channels_size, skip_frames):
     next_observation, reward, is_done, _ = env.step(action)
     acc_obs = np.zeros(state_shape)
     acc_obs[:, :, 0] = preprocess(next_observation)
     acc_reward = reward
-
+    frame_cnt = 1
     for i in range(1, (time_channels_size*skip_frames)+1):
-        # frame_cnt += 1
+        frame_cnt += 1
         next_observation, reward, is_done, _ = env.step(-1)
         acc_reward += reward
 
@@ -105,7 +106,8 @@ def collect_experience(env, action, state_shape, time_channels_size, skip_frames
     # if reward != 0:
     #     print(reward)
 
-    return acc_obs, acc_reward, is_done
+    return acc_obs, acc_reward, is_done, frame_cnt
+
 
 def create_model(input_shape, action_space):
     input = layers.Input(input_shape, dtype=tf.float32)
@@ -169,11 +171,10 @@ for n in range(N):
         env.reset()
 
     action = env.action_space.sample()
-    state, acc_reward, is_done = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
-
+    state, acc_reward, is_done, _ = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
 
     D.append((state, acc_reward, action))
-
+    env.render()
 
 for episode in range(n_episode):
     start_time = time.time()
@@ -209,8 +210,8 @@ for episode in range(n_episode):
             q_values = approximator_model.predict([tf.reshape(init_state, [1] + input_shape), init_mask])
             action = np.argmax(q_values)
 
-
-        state, acc_reward, is_done = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+        state, acc_reward, is_done, frames_of_collected = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+        frame_cnt += frames_of_collected
         episode_rewards.append(acc_reward)
 
         acc_actions.append(action)
@@ -271,11 +272,10 @@ for episode in range(n_episode):
         print(f"Model was saved under {model_target_dir}")
 
 
-
-
-
 # TODO: [x] Simplify the loss function
 # TODO: [x] Apply the reward
 # TODO: [x] Rethink memory handling
 # TODO: [x] Proper memory initialisation
 # TODO: [ ] Refactoring and restructuring
+# TODO: [ ] Add states to tensorboard for analysis
+# TODO: [ ] Write simple model run code

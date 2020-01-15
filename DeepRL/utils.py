@@ -16,35 +16,41 @@ class Memory():
         
         return [self.buffer[i] for i in index]
 
+def collect_experience(env, action, state_shape, time_channels_size, skip_frames):
+    next_observation, reward, is_done, _ = env.step(action)
+    acc_obs = np.zeros(state_shape)
+    acc_obs[:, :, 0] = preprocess(next_observation)
+    acc_reward = reward
+    frame_cnt = 1
+    for i in range(1, (time_channels_size*skip_frames)+1):
+        frame_cnt += 1
+        next_observation, reward, is_done, _ = env.step(-1)
+        acc_reward += reward
+
+        if i % skip_frames == 0:
+            acc_obs[:, :, (i//time_channels_size)] = acc_obs[:, :, -1] if is_done else preprocess(next_observation)
+
+    # episode_rewards .append()
+    # reward = reward / np.absolute(reward) if reward != 0 else reward # Reward normalisation
+    # if reward != 0:
+    #     print(reward)
+
+    return acc_obs, acc_reward, is_done, frame_cnt
 
 
-class RingBuf:
-    def __init__(self, size):
-        # Pro-tip: when implementing a ring buffer, always allocate one extra element,
-        # this way, self.start == self.end always means the buffer is EMPTY, whereas
-        # if you allocate exactly the right number of elements, it could also mean
-        # the buffer is full. This greatly simplifies the rest of the code.
-        self.data = [None] * (size + 1)
-        self.start = 0
-        self.end = 0
 
-    def append(self, element):
-        self.data[self.end] = element
-        self.end = (self.end + 1) % len(self.data)
-        # end == start and yet we just added one element. This means the buffer has one
-        # too many element. Remove the first element by incrementing start.
-        if self.end == self.start:
-            self.start = (self.start + 1) % len(self.data)
 
-    def __getitem__(self, idx):
-        return self.data[(self.start + idx) % len(self.data)]
+def to_grayscale(img):
+    return np.mean(img, axis=2).astype(np.uint8)
 
-    def __len__(self):
-        if self.end < self.start:
-            return self.end + len(self.data) - self.start
-        else:
-            return self.end - self.start
 
-    def __iter__(self):
-        for i in range(len(self)):
-            yield self[i]
+def standardize(img):
+    return img/255
+
+
+def downsample(img):
+    return img[::2, ::2]
+
+
+def preprocess(img):
+    return standardize(to_grayscale(downsample(img)))
