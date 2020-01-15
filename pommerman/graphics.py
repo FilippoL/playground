@@ -13,7 +13,7 @@ from gym.utils import reraise
 import numpy as np
 from PIL import Image
 
-#import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 try:
     import pyglet
@@ -57,6 +57,7 @@ class Viewer(object):
         self._agent_view_size = None
         self._is_partially_observable = False
         self.isopen = False
+        self._pixels = None
 
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -247,7 +248,7 @@ class PommeViewer(Viewer):
             self.window.close()
             self.isopen = False
 
-    def render(self):
+    def render(self, show):
         self.window.switch_to()
         self.window.dispatch_events()
         self._batch = pyglet.graphics.Batch()
@@ -259,8 +260,8 @@ class PommeViewer(Viewer):
         #agents_board = self.render_agents_board()
 
         self._batch.draw()
-        self.window.flip()
-
+        if show:
+            self.window.flip()
 
         #Retrieve raw pixel byte stream
         rawimage = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
@@ -277,6 +278,7 @@ class PommeViewer(Viewer):
         # plt.clf()
 
         image = np.array(image)
+        self._pixels = image
 
     def render_main_board(self):
         board = self._board_state

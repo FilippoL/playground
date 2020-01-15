@@ -201,6 +201,7 @@ class Pomme(gym.Env):
         obs = self.get_observations()
         reward = self._get_rewards()
         info = self._get_info(done, reward)
+        pixels = self._viewer._pixels
 
         if done:
             # Callback to let the agents know that the game has ended.
@@ -208,14 +209,15 @@ class Pomme(gym.Env):
                 agent.episode_end(reward[agent.agent_id])
 
         self._step_count += 1
-        return obs, reward, done, info
+        return obs, reward, done, info, pixels
 
     def render(self,
                mode=None,
                close=False,
                record_pngs_dir=None,
                record_json_dir=None,
-               do_sleep=False):
+               do_sleep=False,
+               show=True):
         if close:
             self.close()
             return
@@ -247,7 +249,7 @@ class Pomme(gym.Env):
             self._viewer.set_agents(self._agents)
             self._viewer.set_step(self._step_count)
             self._viewer.set_bombs(self._bombs)
-            self._viewer.render()
+            self._viewer.render(show)
 
             # Register all agents which need human input with Pyglet.
             # This needs to be done here as the first `imshow` creates the
@@ -261,7 +263,7 @@ class Pomme(gym.Env):
             self._viewer.set_agents(self._agents)
             self._viewer.set_step(self._step_count)
             self._viewer.set_bombs(self._bombs)
-            self._viewer.render()
+            self._viewer.render(show)
 
         if record_pngs_dir:
             self._viewer.save(record_pngs_dir)
