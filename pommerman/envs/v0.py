@@ -215,7 +215,7 @@ class Pomme(gym.Env):
                close=False,
                record_pngs_dir=None,
                record_json_dir=None,
-               do_sleep=True):
+               do_sleep=False):
         if close:
             self.close()
             return

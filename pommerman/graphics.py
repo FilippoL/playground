@@ -224,10 +224,8 @@ class PommeViewer(Viewer):
         from gym.envs.classic_control import rendering
         self.display = rendering.get_display(display)
         board_height = constants.TILE_SIZE * board_size
-        height = math.ceil(board_height + (constants.BORDER_SIZE * 2) +
-                           (constants.MARGIN_SIZE * 3))
-        width = math.ceil(board_height + board_height / 4 +
-                          (constants.BORDER_SIZE * 2) + constants.MARGIN_SIZE)
+        height = math.ceil(board_height)
+        width = math.ceil(board_height)
 
         self._height = height
         self._width = width
@@ -265,42 +263,53 @@ class PommeViewer(Viewer):
         self._batch.draw()
         self.window.flip()
 
+
         #Retrieve raw pixel byte stream
         rawimage = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
         format = 'RGBA'
         pitch = rawimage.width * len(format)
         pixels = rawimage.get_data(format, pitch) #4 bytes per pixel RGBA
 
-        #t0 = time.clock()
-        pixels = binascii.hexlify(pixels)
-        row = 8*738
-        bottom = 0
-        top = 0
-        pixels = pixels[row*bottom:len(pixels)-row*top]
-        pixels2 = bytes()
-        for i in range(0,620-bottom-top+1):
-            pixels2 = pixels2 + pixels[i*738:i*738+738]
-            #print(pixels[i*738:i*738+730])
-            print(f'size of pixels2 = {len(pixels2)} and i is {i}')
-        print(len(pixels))
-        print(len(pixels2))
-        pixels = binascii.unhexlify(pixels2)
-        #t1 = time.clock()
-        #print(t1-t0)
+        image = Image.frombytes('RGBA', (self.window.width,self.window.height), pixels, 'raw').convert('L') # THE IMAGE
 
-        print(f'{len(pixels)} RGBA bytes extracted in frame {str(self._batch)[-16:]}')
+        # To show image
+        # plt.ion()
+        # plt.imshow(image)
+        # plt.pause(0.001)
+        # plt.clf()
 
+        image = np.array(image)
 
-        image = Image.frombytes('RGBA', (738,620-bottom-top), pixels, 'raw')
-
-        plt.ion()
-        plt.imshow(image)
-        plt.pause(0.001)
-        plt.clf()
-
+        #print(f'{len(pixels)} RGBA bytes extracted in frame {str(self._batch)[-16:]}')
 
         #with open(os.path.join('./bytestreamimages/',(str(self._batch)[-16:]))[:-1], 'wb') as out_file:
         #    out_file.write(pixels)
+
+        '''
+        t0 = time.clock()
+        pixels = binascii.hexlify(pixels)
+        row = 8*738
+        bottom = 20
+        top = 50
+        left = 20
+        right = 50
+        pixels = pixels[row*bottom:len(pixels)-row*top]
+        pixels2 = bytes()
+        for i in range(0,620-bottom-top+1):
+            pixels2 = pixels2 + pixels[i*row+left*8:i*row+(620-right)*8]
+            #print(pixels[i*738:i*738+730])
+            #print(f'size of pixels2 = {len(pixels2)} and i is {i}')
+        pixels = binascii.unhexlify(pixels2)
+        t1 = time.clock()
+        print(t1-t0)
+        '''
+
+        #image = Image.frombytes('RGBA', (550,620-bottom-top), pixels, 'raw')
+        '''
+        print(self.window)
+        image = Image.frombytes('RGBA', (self.window.width,self.window.height), pixels, 'raw')
+        '''
+
 
         '''
         b_data = binascii.hexlify(pixels)
@@ -314,8 +323,8 @@ class PommeViewer(Viewer):
         size = self._tile_size
         x_offset = constants.BORDER_SIZE
         y_offset = constants.BORDER_SIZE
-        top = self.board_top(-constants.BORDER_SIZE - 8)
-        return self.render_board(board, x_offset, y_offset, size, top)
+        top = self.board_top(-constants.BORDER_SIZE - constants.TILE_SIZE)
+        return self.render_board(board, 0, 0, size, top)
 
     def render_agents_board(self):
         x_offset = self._board_size * self._tile_size + constants.BORDER_SIZE
