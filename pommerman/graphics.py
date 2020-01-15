@@ -15,6 +15,7 @@ from PIL import Image
 
 import matplotlib.pyplot as plt
 import binascii
+import time
 
 try:
     import pyglet
@@ -255,11 +256,11 @@ class PommeViewer(Viewer):
         self.window.dispatch_events()
         self._batch = pyglet.graphics.Batch()
 
-        background = self.render_background()
-        text = self.render_text()
-        agents = self.render_dead_alive()
+        #background = self.render_background()
+        #text = self.render_text()
+        #agents = self.render_dead_alive()
         board = self.render_main_board()
-        agents_board = self.render_agents_board()
+        #agents_board = self.render_agents_board()
 
         self._batch.draw()
         self.window.flip()
@@ -270,21 +271,36 @@ class PommeViewer(Viewer):
         pitch = rawimage.width * len(format)
         pixels = rawimage.get_data(format, pitch) #4 bytes per pixel RGBA
 
-        print(binascii.hexlify(pixels)[0:8])
-        #exit()
+        #t0 = time.clock()
+        pixels = binascii.hexlify(pixels)
+        row = 8*738
+        bottom = 0
+        top = 0
+        pixels = pixels[row*bottom:len(pixels)-row*top]
+        pixels2 = bytes()
+        for i in range(0,620-bottom-top+1):
+            pixels2 = pixels2 + pixels[i*738:i*738+738]
+            #print(pixels[i*738:i*738+730])
+            print(f'size of pixels2 = {len(pixels2)} and i is {i}')
+        print(len(pixels))
+        print(len(pixels2))
+        pixels = binascii.unhexlify(pixels2)
+        #t1 = time.clock()
+        #print(t1-t0)
 
         print(f'{len(pixels)} RGBA bytes extracted in frame {str(self._batch)[-16:]}')
-        image = Image.frombytes('RGBA', (738,620), pixels, 'raw')
 
-        '''
+
+        image = Image.frombytes('RGBA', (738,620-bottom-top), pixels, 'raw')
+
         plt.ion()
         plt.imshow(image)
         plt.pause(0.001)
         plt.clf()
-        '''
 
-        with open(os.path.join('./bytestreamimages/',(str(self._batch)[-16:]))[:-1], 'wb') as out_file:
-            out_file.write(pixels)
+
+        #with open(os.path.join('./bytestreamimages/',(str(self._batch)[-16:]))[:-1], 'wb') as out_file:
+        #    out_file.write(pixels)
 
         '''
         b_data = binascii.hexlify(pixels)
