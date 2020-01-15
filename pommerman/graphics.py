@@ -13,6 +13,8 @@ from gym.utils import reraise
 import numpy as np
 from PIL import Image
 
+# import matplotlib.pyplot as plt
+
 try:
     import pyglet
 except ImportError as error:
@@ -55,6 +57,7 @@ class Viewer(object):
         self._agent_view_size = None
         self._is_partially_observable = False
         self.isopen = False
+        self._pixels = None
 
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -222,10 +225,8 @@ class PommeViewer(Viewer):
         from gym.envs.classic_control import rendering
         self.display = rendering.get_display(display)
         board_height = constants.TILE_SIZE * board_size
-        height = math.ceil(board_height + (constants.BORDER_SIZE * 2) +
-                           (constants.MARGIN_SIZE * 3))
-        width = math.ceil(board_height + board_height / 4 +
-                          (constants.BORDER_SIZE * 2) + constants.MARGIN_SIZE)
+        height = math.ceil(board_height)
+        width = math.ceil(board_height)
 
         self._height = height
         self._width = width
@@ -249,27 +250,45 @@ class PommeViewer(Viewer):
             self.window.close()
             self.isopen = False
 
-    def render(self):
+    def render(self, show):
         self.window.switch_to()
         self.window.dispatch_events()
         self._batch = pyglet.graphics.Batch()
 
-        background = self.render_background()
-        text = self.render_text()
-        agents = self.render_dead_alive()
+        #background = self.render_background()
+        #text = self.render_text()
+        #agents = self.render_dead_alive()
         board = self.render_main_board()
-        agents_board = self.render_agents_board()
+        #agents_board = self.render_agents_board()
 
         self._batch.draw()
-        self.window.flip()
+        if show:
+            self.window.flip()
+
+        #Retrieve raw pixel byte stream
+        rawimage = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
+        format = 'RGBA'
+        pitch = rawimage.width * len(format)
+        pixels = rawimage.get_data(format, pitch) #4 bytes per pixel RGBA
+
+        image = Image.frombytes('RGBA', (self.window.width,self.window.height), pixels, 'raw').convert('L') # THE IMAGE
+
+        # To show image
+        # plt.ion()
+        # plt.imshow(image)
+        # plt.pause(0.001)
+        # plt.clf()
+
+        image = np.array(image)
+        self._pixels = image
 
     def render_main_board(self):
         board = self._board_state
         size = self._tile_size
         x_offset = constants.BORDER_SIZE
         y_offset = constants.BORDER_SIZE
-        top = self.board_top(-constants.BORDER_SIZE - 8)
-        return self.render_board(board, x_offset, y_offset, size, top)
+        top = self.board_top(-constants.BORDER_SIZE - constants.TILE_SIZE)
+        return self.render_board(board, 0, 0, size, top)
 
     def render_agents_board(self):
         x_offset = self._board_size * self._tile_size + constants.BORDER_SIZE
@@ -372,7 +391,7 @@ class PommeViewer(Viewer):
         dead.width = image_size
         dead.height = image_size
         sprites = []
-        
+
         if self._game_type is constants.GameType.FFA or self._game_type is constants.GameType.OneVsOne:
             agents = self._agents
         else:
@@ -381,10 +400,10 @@ class PommeViewer(Viewer):
         for index, agent in enumerate(agents):
             # weird math to make sure the alignment
             # is correct. 'image_size + spacing' is an offset
-            # that includes padding (spacing) for each image. 
+            # that includes padding (spacing) for each image.
             # '4 - index' is used to space each agent out based
             # on where they are in the array based off of their
-            # index. 
+            # index.
             x = self.board_right() - (len(agents) - index) * (
                 image_size + spacing)
             y = board_top
