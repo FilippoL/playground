@@ -45,14 +45,17 @@ file_writer_qs = tf.summary.create_file_writer(log_dir + "/metrics")
 # file_writer.set_as_default()
 
 # D = list()
-list_size = 6000
+list_size = 60000
 D = deque(maxlen=list_size)
 # D = RingBuf(list_size)
 discount_rate = 0.8
 tau = 0
 max_tau = 2000
 action_space = env.action_space.n
-input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [4]
+time_channels_size = 4
+skip_frames = 4
+input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [time_channels_size]
+state_shape = list(np.zeros(input_shape).shape)[:2] + [time_channels_size+1]
 batch_size = 200
 N = batch_size*4
 n_episode = 1000
@@ -83,6 +86,26 @@ def downsample(img):
 def preprocess(img):
     return standardize(to_grayscale(downsample(img)))
 
+def collect_experience(env, action, state_shape, time_channels_size, skip_frames):
+    next_observation, reward, is_done, _ = env.step(action)
+    acc_obs = np.zeros(state_shape)
+    acc_obs[:, :, 0] = preprocess(next_observation)
+    acc_reward = reward
+
+    for i in range(1, (time_channels_size*skip_frames)+1):
+        # frame_cnt += 1
+        next_observation, reward, is_done, _ = env.step(-1)
+        acc_reward += reward
+
+        if i % skip_frames == 0:
+            acc_obs[:, :, (i//time_channels_size)] = acc_obs[:, :, -1] if is_done else preprocess(next_observation)
+
+    # episode_rewards .append()
+    # reward = reward / np.absolute(reward) if reward != 0 else reward # Reward normalisation
+    # if reward != 0:
+    #     print(reward)
+
+    return acc_obs, acc_reward, is_done
 
 def create_model(input_shape, action_space):
     input = layers.Input(input_shape, dtype=tf.float32)
@@ -133,46 +156,24 @@ exploration_rate = 1
 minimal_exploration_rate = 0.01
 
 # ===== INITIALISATION ======
-initial_state = deque(maxlen=4)
-next_state = deque(maxlen=4)
-
-initial_observation = preprocess(env.reset())
-action = env.action_space.sample()
-next_observation, reward, is_done, _ = env.step(action)  # Unnecessary
-
-initial_state.append(initial_observation)
-initial_state.append(initial_observation)
-initial_state.append(initial_observation)
-initial_state.append(initial_observation)
-
-next_state = initial_state.copy()
 frame_cnt = 0
 prev_lives = 5
 acc_nonzeros = []
 acc_actions = []
+is_done = False
+env.reset()
 
 for n in range(N):
-    frame_cnt += 1
-    if frame_cnt % 4 != 0:
-        env.render()
-        continue
+
     if is_done:
-        frame_cnt = 0
         env.reset()
-        initial_observation = preprocess(env.reset())
-        initial_state.append(initial_observation)
-        initial_state.append(initial_observation)
-        initial_state.append(initial_observation)
-        initial_state.append(initial_observation)
+
     action = env.action_space.sample()
-    next_observation, reward, is_done, _ = env.step(action)
-    reward = reward / np.absolute(reward) if reward != 0 else reward
-    # reward = -1.0 if _['ale.lives'] < prev_lives else reward
-    # reward = -2.0 if is_done else reward
-    next_state.append(preprocess(next_observation))
-    D.append((initial_state.copy(), reward, action, next_state.copy()))
-    initial_state = next_state
-    env.render()
+    state, acc_reward, is_done = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+
+
+    D.append((state, acc_reward, action))
+
 
 for episode in range(n_episode):
     start_time = time.time()
@@ -186,45 +187,34 @@ for episode in range(n_episode):
 
     print(f"Running episode {episode} with exploration rate: {exploration_rate}")
     # print(is_done)
-    initial_observation = preprocess(env.reset())
+    initial_observation = env.reset()
+    state = np.repeat(preprocess(initial_observation), 5).reshape(state_shape)
     is_done = False
-    initial_state.append(initial_observation)
-    initial_state.append(initial_observation)
-    initial_state.append(initial_observation)
-    initial_state.append(initial_observation)
 
-    next_state = initial_state.copy()  # To remove all the information of the last episode
+    # next_state = initial_state.copy()  # To remove all the information of the last episode
 
     episode_rewards = []
-    episode_rewards_normalized = []
     frame_cnt = 0
-    # prev_lives = 5
     while not is_done:
         # https://danieltakeshi.github.io/2016/11/25/frame-skipping-and-preprocessing-for-deep-q-networks-on-atari-2600-games/
         frame_cnt += 1
-        if frame_cnt % 4 != 0:
-            continue
         tau += 1
+
         if random.choices((True, False), (exploration_rate, 1 - exploration_rate))[0]:
             action = env.action_space.sample()
         else:
             # Greedy action
             init_mask = tf.ones([1, action_space])
-            q_values = approximator_model.predict([tf.reshape(tf.constant(initial_state), [1] + input_shape), init_mask])
+            init_state = state[:, :, :-1]
+            q_values = approximator_model.predict([tf.reshape(init_state, [1] + input_shape), init_mask])
             action = np.argmax(q_values)
 
 
-        next_observation, reward, is_done, _ = env.step(action)
+        state, acc_reward, is_done = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+        episode_rewards.append(acc_reward)
 
-        episode_rewards.append(reward)
         acc_actions.append(action)
-        # reward = reward / np.absolute(reward) if reward != 0 else reward # Reward normalisation
-        # if reward != 0:
-        #     print(reward)
-
-        next_state.append(preprocess(next_observation))
-
-        D.append((initial_state.copy(), reward, action, next_state.copy()))
+        D.append((state, acc_reward, action))
         if (episode % 5) == 0:
             with file_writer_rewards.as_default():
                 tf.summary.histogram('action_taken', acc_actions, step=episode)
@@ -235,10 +225,10 @@ for episode in range(n_episode):
     experience_batch = random.sample(D, k=batch_size)
 
     # Gather initial and next state from memory for each batch item
-    set_of_batch_initial_states = [exp[0] for exp in experience_batch]
-    set_of_batch_initial_states = tf.reshape(set_of_batch_initial_states, [-1] + input_shape)
-    set_of_batch_next_states = tf.constant([exp[3] for exp in experience_batch])
-    set_of_batch_next_states = tf.reshape(set_of_batch_next_states, [-1] + input_shape)
+    set_of_batch_initial_states = tf.constant([exp[0][:, :, :-1] for exp in experience_batch])
+    # set_of_batch_initial_states = tf.reshape(set_of_batch_initial_states, [-1] + input_shape)
+    set_of_batch_next_states = tf.constant([exp[0][:, :, 1:] for exp in experience_batch])
+    # set_of_batch_next_states = tf.reshape(set_of_batch_next_states, [-1] + input_shape)
 
     # Gather actions for each batch item
     set_of_batch_actions = tf.one_hot([exp[2] for exp in experience_batch], action_space)
@@ -254,12 +244,12 @@ for episode in range(n_episode):
 
     next_q = set_of_batch_rewards + (discount_rate * tf.reduce_max(next_q_values, axis=1))
     history = approximator_model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback])
-    
+
     # Wrap up
     loss = history.history.get("loss", [0])[0]
     time_end = np.round(time.time() - start_time, 2)
     memory_usage = process.memory_info().rss
-    print(f"Current memory consumption is {memory_usage}") 
+    print(f"Current memory consumption is {memory_usage}")
     print(f"Loss of episode {episode} is {loss} and took {time_end} seconds")
     with file_writer_rewards.as_default():
         tf.summary.scalar('episode_rewards', np.sum(episode_rewards), step=episode)
@@ -268,6 +258,7 @@ for episode in range(n_episode):
         tf.summary.scalar('episode_nr_frames', frame_cnt, step=episode)
         tf.summary.scalar('episode_exploration_rate', exploration_rate, step=episode)
         tf.summary.scalar('episode_mem_usage', memory_usage, step=episode)
+        tf.summary.scalar('episode_frames_per_sec', np.round(frame_cnt/time_end, 2), step=episode)
         tf.summary.histogram('q-values', next_q_values, step=episode)
         if (episode+1) % 5 == 0:
             acc_nonzeros.append(episode_nonzero_reward_states)
@@ -278,6 +269,10 @@ for episode in range(n_episode):
         model_target_dir = checkpoint_path.format(epoch=episode)
         approximator_model.save_weights(model_target_dir)
         print(f"Model was saved under {model_target_dir}")
+
+
+
+
 
 # TODO: [x] Simplify the loss function
 # TODO: [x] Apply the reward
