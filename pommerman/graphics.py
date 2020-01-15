@@ -13,9 +13,7 @@ from gym.utils import reraise
 import numpy as np
 from PIL import Image
 
-import matplotlib.pyplot as plt
-import binascii
-import time
+#import matplotlib.pyplot as plt
 
 try:
     import pyglet
@@ -279,44 +277,6 @@ class PommeViewer(Viewer):
         # plt.clf()
 
         image = np.array(image)
-
-        #print(f'{len(pixels)} RGBA bytes extracted in frame {str(self._batch)[-16:]}')
-
-        #with open(os.path.join('./bytestreamimages/',(str(self._batch)[-16:]))[:-1], 'wb') as out_file:
-        #    out_file.write(pixels)
-
-        '''
-        t0 = time.clock()
-        pixels = binascii.hexlify(pixels)
-        row = 8*738
-        bottom = 20
-        top = 50
-        left = 20
-        right = 50
-        pixels = pixels[row*bottom:len(pixels)-row*top]
-        pixels2 = bytes()
-        for i in range(0,620-bottom-top+1):
-            pixels2 = pixels2 + pixels[i*row+left*8:i*row+(620-right)*8]
-            #print(pixels[i*738:i*738+730])
-            #print(f'size of pixels2 = {len(pixels2)} and i is {i}')
-        pixels = binascii.unhexlify(pixels2)
-        t1 = time.clock()
-        print(t1-t0)
-        '''
-
-        #image = Image.frombytes('RGBA', (550,620-bottom-top), pixels, 'raw')
-        '''
-        print(self.window)
-        image = Image.frombytes('RGBA', (self.window.width,self.window.height), pixels, 'raw')
-        '''
-
-
-        '''
-        b_data = binascii.hexlify(pixels)
-        with open('pixels_hex.bin', 'wb') as out_file:
-            out_file.write(b_data)
-        '''
-        #pprint(b_data)
 
     def render_main_board(self):
         board = self._board_state
