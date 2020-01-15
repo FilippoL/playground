@@ -13,6 +13,9 @@ from gym.utils import reraise
 import numpy as np
 from PIL import Image
 
+import matplotlib.pyplot as plt
+import binascii
+
 try:
     import pyglet
 except ImportError as error:
@@ -261,6 +264,35 @@ class PommeViewer(Viewer):
         self._batch.draw()
         self.window.flip()
 
+        #Retrieve raw pixel byte stream
+        rawimage = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
+        format = 'RGBA'
+        pitch = rawimage.width * len(format)
+        pixels = rawimage.get_data(format, pitch) #4 bytes per pixel RGBA
+
+        print(binascii.hexlify(pixels)[0:8])
+        #exit()
+
+        print(f'{len(pixels)} RGBA bytes extracted in frame {str(self._batch)[-16:]}')
+        image = Image.frombytes('RGBA', (738,620), pixels, 'raw')
+
+        '''
+        plt.ion()
+        plt.imshow(image)
+        plt.pause(0.001)
+        plt.clf()
+        '''
+
+        with open(os.path.join('./bytestreamimages/',(str(self._batch)[-16:]))[:-1], 'wb') as out_file:
+            out_file.write(pixels)
+
+        '''
+        b_data = binascii.hexlify(pixels)
+        with open('pixels_hex.bin', 'wb') as out_file:
+            out_file.write(b_data)
+        '''
+        #pprint(b_data)
+
     def render_main_board(self):
         board = self._board_state
         size = self._tile_size
@@ -370,7 +402,7 @@ class PommeViewer(Viewer):
         dead.width = image_size
         dead.height = image_size
         sprites = []
-        
+
         if self._game_type is constants.GameType.FFA or self._game_type is constants.GameType.OneVsOne:
             agents = self._agents
         else:
@@ -379,10 +411,10 @@ class PommeViewer(Viewer):
         for index, agent in enumerate(agents):
             # weird math to make sure the alignment
             # is correct. 'image_size + spacing' is an offset
-            # that includes padding (spacing) for each image. 
+            # that includes padding (spacing) for each image.
             # '4 - index' is used to space each agent out based
             # on where they are in the array based off of their
-            # index. 
+            # index.
             x = self.board_right() - (len(agents) - index) * (
                 image_size + spacing)
             y = board_top
