@@ -9,6 +9,10 @@ import gym
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import models, layers
+import psutil
+
+from RingBuffer import RingBuf
+process = psutil.Process(os.getpid())
 
 # env = gym.make('BreakoutDeterministic-v4')
 env = gym.make('Assault-v0')
@@ -33,7 +37,7 @@ log_dir = os.path.join(
     "logs",
     now,
 )
-tensorflow_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir)
+tensorflow_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, profile_batch=5, histogram_freq=1)
 file_writer_rewards = tf.summary.create_file_writer(log_dir + "/metrics")
 file_writer_qs = tf.summary.create_file_writer(log_dir + "/metrics")
 
@@ -43,6 +47,7 @@ file_writer_qs = tf.summary.create_file_writer(log_dir + "/metrics")
 # D = list()
 list_size = 6000
 D = deque(maxlen=list_size)
+# D = RingBuf(list_size)
 discount_rate = 0.8
 tau = 0
 max_tau = 2000
@@ -143,6 +148,9 @@ initial_state.append(initial_observation)
 next_state = initial_state.copy()
 frame_cnt = 0
 prev_lives = 5
+acc_nonzeros = []
+acc_actions = []
+
 for n in range(N):
     frame_cnt += 1
     if frame_cnt % 4 != 0:
@@ -174,7 +182,7 @@ for episode in range(n_episode):
         print("===> Updated weights")
 
     exploration_rate = np.power(exploration_base, -episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
-    exploration_rate = 1-(episode*1/n_episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
+    # exploration_rate = 1-(episode*1/n_episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
 
     print(f"Running episode {episode} with exploration rate: {exploration_rate}")
     # print(is_done)
@@ -205,12 +213,11 @@ for episode in range(n_episode):
             q_values = approximator_model.predict([tf.reshape(tf.constant(initial_state), [1] + input_shape), init_mask])
             action = np.argmax(q_values)
 
-        with file_writer_rewards.as_default():
-            tf.summary.histogram('action_taken', action, step=frame_cnt)
 
         next_observation, reward, is_done, _ = env.step(action)
 
         episode_rewards.append(reward)
+        acc_actions.append(action)
         # reward = reward / np.absolute(reward) if reward != 0 else reward # Reward normalisation
         # if reward != 0:
         #     print(reward)
@@ -219,6 +226,8 @@ for episode in range(n_episode):
 
         D.append((initial_state.copy(), reward, action, next_state.copy()))
         if (episode % 5) == 0:
+            with file_writer_rewards.as_default():
+                tf.summary.histogram('action_taken', acc_actions, step=episode)
             print(f"Render for episode {episode}")
             env.render()
 
@@ -245,17 +254,26 @@ for episode in range(n_episode):
 
     next_q = set_of_batch_rewards + (discount_rate * tf.reduce_max(next_q_values, axis=1))
     history = approximator_model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback])
+    
+    # Wrap up
     loss = history.history.get("loss", [0])[0]
     time_end = np.round(time.time() - start_time, 2)
-
+    memory_usage = process.memory_info().rss
+    print(f"Current memory consumption is {memory_usage}") 
     print(f"Loss of episode {episode} is {loss} and took {time_end} seconds")
     with file_writer_rewards.as_default():
         tf.summary.scalar('episode_rewards', np.sum(episode_rewards), step=episode)
         tf.summary.scalar('episode_loss', loss, step=episode)
         tf.summary.scalar('episode_time_in_secs', time_end, step=episode)
+        tf.summary.scalar('episode_nr_frames', frame_cnt, step=episode)
         tf.summary.scalar('episode_exploration_rate', exploration_rate, step=episode)
-        tf.summary.histogram('episode_nonzero_reward_states', episode_nonzero_reward_states)
-        tf.summary.histogram('q-values', next_q_values)
+        tf.summary.scalar('episode_mem_usage', memory_usage, step=episode)
+        tf.summary.histogram('q-values', next_q_values, step=episode)
+        if (episode+1) % 5 == 0:
+            acc_nonzeros.append(episode_nonzero_reward_states)
+            tf.summary.histogram('episode_nonzero_reward_states', acc_nonzeros, step=(episode+1)//5)
+        else:
+            acc_nonzeros.append(episode_nonzero_reward_states)
     if (episode+1) % 50 == 0:
         model_target_dir = checkpoint_path.format(epoch=episode)
         approximator_model.save_weights(model_target_dir)
