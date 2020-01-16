@@ -26,20 +26,15 @@ def main():
                          agent_list, render_mode='human')
 
     # Run the episodes just like OpenAI Gym
-    lijst = []
     for i_episode in range(20):
+
         state = env.reset()
         done = False
+
         while not done:
-            t0 = time.clock()
-            env.render(show=False)
             actions = env.act(state)
-            state, reward, done, info, pixels = env.step(actions)
-            t1 = time.clock()
-            lijst.append(t1-t0)
-            # print(pixels)
+            state, reward, done, info, pixels = env.step2(actions)
         print('Episode {} finished'.format(i_episode))
-    print(f'Mean frametime = {mean(lijst)}')
     env.close()
 
 

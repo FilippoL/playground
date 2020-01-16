@@ -24,23 +24,23 @@ def preprocess(img):
 def collect_experience(env, action, state_shape, TIME_CHANNELS_SIZE, SKIP_FRAMES):
     action_space = env.action_space.n
     action_onehot = tf.one_hot(action, action_space)
-    next_observation, reward, is_done, _ = env.step2(
+    next_observation, reward, is_done, info, pixels = env.step2(
         action_onehot, render=True)
     acc_obs = np.zeros(state_shape)
-    acc_obs[:, :, 0] = preprocess(next_observation)
+    acc_obs[:, :, 0] = preprocess(pixels)
     acc_reward = reward[0]
 
     for i in range(1, (TIME_CHANNELS_SIZE*SKIP_FRAMES)+1):
         # frame_cnt += 1
 
         if i % SKIP_FRAMES == 0:
-            next_observation, reward, is_done, _ = env.step2(
+            next_observation, reward, is_done, info, pixels = env.step2(
                 tf.one_hot(env.action_space.sample(), action_space), render=True)
             acc_reward += reward[0]
             acc_obs[:, :, (i//TIME_CHANNELS_SIZE)] = acc_obs[:,
-                                                             :, -1] if is_done else preprocess(next_observation)
+                                                             :, -1] if is_done else preprocess(pixels)
         else:
-            next_observation, reward, is_done, _ = env.step2(
+            next_observation, reward, is_done, info, pixels = env.step2(
                 [0]*action_space, render=False)
             acc_reward += reward[0]
 
@@ -106,11 +106,12 @@ def main():
 
     # Create the environment
     agent_list = [
-        agents.SimpleAgent(),
         agents.RandomAgent(),
         agents.SimpleAgent(),
-        agents.RandomAgent(),
+        agents.SimpleAgent(),
+        agents.SimpleAgent(),
     ]
+
     env = pommerman.make('PommeFFACompetition-v0',
                          agent_list, render_mode='human')
 
@@ -143,7 +144,7 @@ def main():
     SKIP_FRAMES = 1
     INPUT_SHAPE = list(env.get_observation_space()) + [TIME_CHANNELS_SIZE]
     STATE_SHAPE = INPUT_SHAPE[:2] + [TIME_CHANNELS_SIZE+1]
-    BATCH_SIZE = 5
+    BATCH_SIZE = 3
     N = BATCH_SIZE
     N_EPISODES = 1000
     Q_MASK_SHAPE = (BATCH_SIZE, ACTION_SPACE)
@@ -160,25 +161,25 @@ def main():
     prev_lives = 5
     acc_nonzeros = []
     acc_actions = []
-    is_done = False
-    env.reset()
 
     print("Running the init")
     for n in range(N):
+        state_obs = env.reset()
+        done = False
+        while not done:
+            actions_all_agents = env.act(state_obs)
+            state_obs, reward, done, info, pixels = env.step2(
+                actions_all_agents)
 
-        if is_done:
-            env.reset()
-
-        action = env.action_space.sample()
-        state, acc_reward, is_done = collect_experience(
-            env, action, STATE_SHAPE, TIME_CHANNELS_SIZE, SKIP_FRAMES)
-
-        D.append((state, acc_reward, action))
+            D.append((pixels, reward[0], actions_all_agents[0]))
+        print('Init episode {} finished'.format(n))
 
     for episode in range(N_EPISODES):
         start_time = time.time()
+
         if TAU >= MAX_TAU:
             TAU = 0
+            # Copy the weights from policy model to target model
             target_model.set_weights(approximator_model.get_weights())
             print("===> Updated weights")
 
@@ -190,24 +191,29 @@ def main():
             f"Running episode {episode} with exploration rate: {EXPLORATION_RATE}")
         # print(is_done)
 
-        # Should return pixels
-        initial_observation = env.reset()
-        state = np.repeat(preprocess(initial_observation),
+        # Intial step for the episode
+        state_obs = env.reset()
+        actions = env.act(state_obs)
+        initial_observation, reward, is_done, info, pixels = env.step2(
+            actions, render=True)
+
+        state = np.repeat(preprocess(pixels),
                           5).reshape(STATE_SHAPE)
-        is_done = False
+        done = False
 
         # next_state = initial_state.copy()  # To remove all the information of the last episode
 
         episode_rewards = []
         frame_cnt = 0
-        while not is_done:
+
+        while not done:
             # https://danieltakeshi.github.io/2016/11/25/frame-skipping-and-preprocessing-for-deep-q-networks-on-atari-2600-games/
             frame_cnt += 1
             TAU += 1
 
-            if random.choices((True, False), (EXPLORATION_RATE, 1 - EXPLORATION_RATE))[0]:
-                action = env.action_space.sample()
-            else:
+            actions_all_agents = env.act(state_obs)
+
+            if not random.choices((True, False), (EXPLORATION_RATE, 1 - EXPLORATION_RATE))[0]:
                 # Greedy action
                 init_mask = tf.ones([1, ACTION_SPACE])
                 init_state = state[:, :, :-1]
@@ -215,22 +221,24 @@ def main():
                     [tf.reshape(init_state, [1] + INPUT_SHAPE), init_mask])
                 action = np.argmax(q_values)
 
-            state, acc_reward, is_done = collect_experience(
-                env, action, STATE_SHAPE, TIME_CHANNELS_SIZE, SKIP_FRAMES)
-            episode_rewards.append(acc_reward)
+                actions_all_agents[0] = action
 
-            acc_actions.append(action)
-            D.append((state, acc_reward, action))
-            # if (episode % 5) == 0:
-            #     with file_writer_rewards.as_default():
-            #         tf.summary.histogram(
-            #             'action_taken', acc_actions, step=episode)
-            #     print(f"Render for episode {episode}")
-            #     env.render(show=True)
+            state_obs, reward, done, info, pixels = env.step2(
+                actions_all_agents)
+            D.append((pixels, reward[0], actions_all_agents[0]))
+
+            # state, acc_reward, is_done = collect_experience(
+            #     env, action, STATE_SHAPE, TIME_CHANNELS_SIZE, SKIP_FRAMES)
+            # episode_rewards.append(acc_reward)
+
+            # acc_actions.append(action)
+            # D.append((state, acc_reward, action))
 
         print(f"Number of frames in memory {len(D)}")
         experience_batch = random.sample(D, k=BATCH_SIZE)
 
+        print(experience_batch[0])
+        print(experience_batch.shape)
         # Gather initial and next state from memory for each batch item
         set_of_batch_initial_states = tf.constant(
             [exp[0][:, :, :-1] for exp in experience_batch])

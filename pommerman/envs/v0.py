@@ -182,9 +182,7 @@ class Pomme(gym.Env):
                 agent.set_start_position((row, col))
                 agent.reset()
 
-        self.render(show=True)
-        print("###$####")
-        return self._viewer._pixels
+        return self.get_observations()
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -218,21 +216,12 @@ class Pomme(gym.Env):
         self._step_count += 1
         return obs, reward, done, info
 
-    def step2(self, actions, render=False):
+    def step2(self, actions, render=True):
         if render:
-            pixels_old = self._viewer._pixels  # debug
-
             self.render(show=True)
             obs, reward, done, info = self.step(actions)
             pixels = self._viewer._pixels
-
-            # debug
-            if not np.array_equal(pixels_old, pixels):
-                print(pixels.shape)
-                print(pixels_old.shape)
-                print("They are not equal.")
-
-            return pixels, reward, done, info
+            return obs, reward, done, info, pixels
         else:
             obs, reward, done, info = self.step(actions)
             print("±±±±±±±±±")
