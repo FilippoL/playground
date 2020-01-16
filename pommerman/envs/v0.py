@@ -220,11 +220,18 @@ class Pomme(gym.Env):
 
     def step2(self, actions, render=False):
         if render:
+            pixels_old = self._viewer._pixels  # debug
+
             self.render(show=True)
             obs, reward, done, info = self.step(actions)
-            print("±±±±±±±±±")
-            print(reward)
             pixels = self._viewer._pixels
+
+            # debug
+            if not np.array_equal(pixels_old, pixels):
+                print(pixels.shape)
+                print(pixels_old.shape)
+                print("They are not equal.")
+
             return pixels, reward, done, info
         else:
             obs, reward, done, info = self.step(actions)
