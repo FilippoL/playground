@@ -577,7 +577,7 @@ class ForwardModel(object):
         if step_count >= max_steps:
             return True
         elif game_type == constants.GameType.FFA or game_type == constants.GameType.OneVsOne:
-            if training_agent is not None and training_agent not in alive_ids:
+            if 0 not in alive_ids:
                 return True
             return len(alive) <= 1
         elif any([
