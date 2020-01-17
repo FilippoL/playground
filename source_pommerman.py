@@ -4,15 +4,20 @@ import platform
 import random
 from collections import deque
 import time
-import gym
+
+# import gym
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import models, layers
 import psutil
 import pommerman
-from pommerman import agents
+from pommerman import agents, constants
+from DeepRL.sampling import prioritized_experience_sampling_pommerman
+from DeepRL.utils import plot_to_image, image_grid_pommerman
 
 ### =========== HELPER FUNCTIONS =========== ###
+
+take_sample = prioritized_experience_sampling_pommerman
 
 
 def preprocess(img):
@@ -111,7 +116,7 @@ def main():
     SKIP_FRAMES = 1
     INPUT_SHAPE = list(env.get_observation_space()) + [TIME_CHANNELS_SIZE]
     STATE_SHAPE = INPUT_SHAPE[:2] + [TIME_CHANNELS_SIZE+1]
-    BATCH_SIZE = 32
+    BATCH_SIZE = 250
     N = BATCH_SIZE
     N_EPISODES = 1000
     Q_MASK_SHAPE = (BATCH_SIZE, ACTION_SPACE)
@@ -152,7 +157,7 @@ def main():
 
         # EXPLORATION_RATE = np.power(EXPLORATION_BASE, -episode) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
         EXPLORATION_RATE = 1 - \
-            (episode*1/N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
+            (episode*10/N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
 
         print(
             f"Running episode {episode} with exploration rate: {EXPLORATION_RATE}")
@@ -200,36 +205,35 @@ def main():
             D.append((preprocess(pixels), reward[0], actions_all_agents[0]))
 
         print(f"Number of frames in memory {len(D)}")
-        experience_batch = random.sample(D, k=BATCH_SIZE)
+        experience_batch = take_sample(D, approximator_model, target_model, BATCH_SIZE, ACTION_SPACE)
 
-        set_of_batch_states = tf.constant([exp[0] for exp in experience_batch])
+        set_of_batch_states = tf.constant([exp[0][0] for exp in experience_batch])
+        set_of_batch_next_states = tf.constant([exp[1][0] for exp in experience_batch])
 
         # Gather actions for each batch item
         set_of_batch_actions = tf.one_hot(
-            [exp[2] for exp in experience_batch], ACTION_SPACE)
-        set_of_batch_states = tf.cast(tf.reshape(
-            set_of_batch_states, set_of_batch_states.shape + [1]), dtype=tf.float32)
-
+            [exp[0][2] for exp in experience_batch], ACTION_SPACE)
+       
         # Maybe unnecessary - We are using the double q mask instead.
         next_q_mask = tf.ones([BATCH_SIZE, ACTION_SPACE])
+
+        set_of_batch_states = tf.cast(tf.reshape(
+            set_of_batch_states, set_of_batch_states.shape + [1]), dtype=tf.float32)
         double_q_mask = tf.one_hot(tf.argmax(approximator_model.predict(
             [set_of_batch_states, next_q_mask]), axis=1), ACTION_SPACE)  # http://arxiv.org/abs/1509.06461
-        next_q_values = tf.constant(target_model.predict(
-            [set_of_batch_states, double_q_mask]))
-
-        tmp_init_q_values = tf.constant(approximator_model.predict(
-            [set_of_batch_states, set_of_batch_actions]))
-
+        
+        set_of_batch_next_states = tf.cast(tf.reshape(set_of_batch_next_states, set_of_batch_next_states.shape + [1]), dtype=tf.float32)
+        next_q_values = tf.constant(target_model.predict([set_of_batch_next_states, double_q_mask]))
+        
         # Gather rewards for each batch item
         set_of_batch_rewards = tf.constant(
-            [exp[1] for exp in experience_batch], dtype=next_q_values.dtype)
+            [exp[0][1] for exp in experience_batch], dtype=next_q_values.dtype)
         episode_nonzero_reward_states = (
             tf.math.count_nonzero(set_of_batch_rewards)/BATCH_SIZE)*100
         print(
             f"Number of information yielding states: {episode_nonzero_reward_states}")
 
-        next_q = set_of_batch_rewards + \
-            (DISCOUNT_RATE * tf.reduce_max(next_q_values, axis=1))
+        next_q = set_of_batch_rewards + (DISCOUNT_RATE * tf.reduce_max(next_q_values, axis=1))
 
         # print("------"*15)
         # tf.print(next_q)
@@ -251,6 +255,12 @@ def main():
         print(f"Current memory consumption is {memory_usage}")
         print(
             f"Loss of episode {episode} is {loss} and took {time_end} seconds")
+        random_experience_idx = random.choice(range(len(experience_batch)-1))
+        random_experience = experience_batch[random_experience_idx][0]
+        random_experience_next = experience_batch[random_experience_idx][1]
+
+        # print(tmp.shape)
+        episode_image = plot_to_image(image_grid_pommerman(random_experience, random_experience_next, [action for action in constants.Action]))
         with file_writer_rewards.as_default():
             tf.summary.scalar('episode_rewards', np.sum(
                 episode_rewards), step=episode)
@@ -263,6 +273,9 @@ def main():
             tf.summary.scalar('episode_frames_per_sec', np.round(
                 frame_cnt/time_end, 2), step=episode)
             tf.summary.histogram('q-values', next_q_values, step=episode)
+
+            tf.summary.scalar('episode_mem_usage_in_GB', np.round(memory_usage/1024/1024/1024), step=episode)
+            tf.summary.image('episode_example_state', episode_image, step=episode)
             if (episode+1) % 5 == 0:
                 acc_nonzeros.append(episode_nonzero_reward_states)
                 tf.summary.histogram(

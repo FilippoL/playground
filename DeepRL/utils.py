@@ -123,7 +123,7 @@ def image_grid(experience, meanings):
     action = experience[2]
     figure = plt.figure(figsize=(10, 5))
     figure.suptitle(f"Action {meanings[action]} and received {reward}", fontsize=16)
-    time_channel = img.shape[2]
+    time_channel = 1
     for i in range(time_channel):
         # Start next subplot.
         plt.subplot(1, time_channel, i + 1, title=f"Frame {i}")
@@ -131,6 +131,32 @@ def image_grid(experience, meanings):
         plt.yticks([])
         plt.grid(False)
         plt.imshow(img[:, :, i], cmap=plt.cm.gray)
+
+    return figure
+
+
+def image_grid_pommerman(experience, experience2, meanings):
+    """Return a 5x5 grid of the MNIST images as a matplotlib figure."""
+    # Create a figure to contain the plot.
+    img = experience[0]
+    img_next = experience2[0]
+    reward = experience[1]
+    action = experience[2]
+    figure = plt.figure(figsize=(10, 5))
+    figure.suptitle(f"Action {meanings[action]} and received {reward}", fontsize=16)
+
+    # Start next subplot.
+    plt.subplot(1, 2, 1, title=f"Frame initial")
+    plt.xticks([])
+    plt.yticks([])
+    plt.grid(False)
+    plt.imshow(img, cmap=plt.cm.gray)
+
+    plt.subplot(1, 2, 2, title=f"Frame next")
+    plt.xticks([])
+    plt.yticks([])
+    plt.grid(False)
+    plt.imshow(img_next, cmap=plt.cm.gray)
 
     return figure
 
