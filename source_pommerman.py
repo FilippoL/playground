@@ -111,7 +111,7 @@ def main():
     SKIP_FRAMES = 1
     INPUT_SHAPE = list(env.get_observation_space()) + [TIME_CHANNELS_SIZE]
     STATE_SHAPE = INPUT_SHAPE[:2] + [TIME_CHANNELS_SIZE+1]
-    BATCH_SIZE = 1
+    BATCH_SIZE = 32
     N = BATCH_SIZE
     N_EPISODES = 1000
     Q_MASK_SHAPE = (BATCH_SIZE, ACTION_SPACE)
@@ -151,7 +151,8 @@ def main():
             print("===> Updated weights")
 
         # EXPLORATION_RATE = np.power(EXPLORATION_BASE, -episode) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
-        EXPLORATION_RATE = 1-(episode*1/N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
+        EXPLORATION_RATE = 1 - \
+            (episode*1/N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
 
         print(
             f"Running episode {episode} with exploration rate: {EXPLORATION_RATE}")
@@ -186,14 +187,7 @@ def main():
                     [tf.reshape(init_state, [1] + INPUT_SHAPE), init_mask])
                 action = np.argmax(q_values)
 
-                # print(
-                #     f"Exploiting: {actions_all_agents[0]} is changed to {action}")
                 actions_all_agents[0] = action
-            # else:
-            #     print("Exploring")
-
-            # 3 is left, 4 is right, 5 is placing bomb
-            # actions_all_agents[0] = 5
 
             state_obs, reward, done, info, pixels = env.step2(
                 actions_all_agents)
@@ -218,11 +212,13 @@ def main():
 
         # Maybe unnecessary - We are using the double q mask instead.
         next_q_mask = tf.ones([BATCH_SIZE, ACTION_SPACE])
-        # set_of_batch_states = [1] + set_of_batch_states
         double_q_mask = tf.one_hot(tf.argmax(approximator_model.predict(
             [set_of_batch_states, next_q_mask]), axis=1), ACTION_SPACE)  # http://arxiv.org/abs/1509.06461
         next_q_values = tf.constant(target_model.predict(
             [set_of_batch_states, double_q_mask]))
+
+        tmp_init_q_values = tf.constant(approximator_model.predict(
+            [set_of_batch_states, set_of_batch_actions]))
 
         # Gather rewards for each batch item
         set_of_batch_rewards = tf.constant(
@@ -234,6 +230,17 @@ def main():
 
         next_q = set_of_batch_rewards + \
             (DISCOUNT_RATE * tf.reduce_max(next_q_values, axis=1))
+
+        # print("------"*15)
+        # tf.print(next_q)
+        # tf.print(tf.reduce_max(tmp_init_q_values, axis=1))
+        # tf.print(
+        #     tf.square(next_q-tf.reduce_max(tmp_init_q_values, axis=1)))
+        # somethingLoss = tf.square(
+        #     next_q-tf.reduce_max(tmp_init_q_values, axis=1))
+        # tf.print(tf.reduce_sum(somethingLoss)/BATCH_SIZE)
+        # print("------"*15)
+
         history = approximator_model.fit(
             [set_of_batch_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback])
 
