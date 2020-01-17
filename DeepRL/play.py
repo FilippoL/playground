@@ -10,24 +10,33 @@ import numpy as np
 import tensorflow as tf
 import psutil
 
-from utils import preprocess, collect_experience
+from utils import preprocess, collect_experience_turtle
 from model import create_model
+
+collect_experience = collect_experience_turtle
+
 process = psutil.Process(os.getpid())
 
 # env = gym.make('BreakoutDeterministic-v4')
 env = gym.make('Assault-v0')
 
 now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-MODEL_PATH = "file:///C:/Users/ohund/workspace/playground/DeepRL/models/20200115-213917/checkpoint"
-MODEL_PATH = "models/20200115-020016-Longest-Run-Crash/checkpoint"
+# MODEL_PATH = "file:///C:/Users/ohund/workspace/playground/DeepRL/models/20200115-213917/checkpoint"
+MODEL_PATH = "models/20200115-141757-Best-One"
+MODEL_PATH = "models/20200115-020016-Longest-Run-Crash"
+MODEL_PATH = "models/20200116-155707"
+MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
+latest = tf.train.latest_checkpoint(MODEL_PATH)
+print(f"Loading model from {latest}")
+
 # file_writer_qs = tf.summary.create_file_writer(log_dir + "/qs")
 # file_writer.set_as_default()
 
 action_meanings = env.get_action_meanings()
 discount_rate = 0.8
 action_space = env.action_space.n
-time_channels_size = 4
-skip_frames = 4
+time_channels_size = 2
+skip_frames = 2
 input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [time_channels_size]
 state_shape = list(np.zeros(input_shape).shape)[:2] + [time_channels_size+1]
 batch_size = 200
@@ -46,7 +55,7 @@ print(f"Pixel space of the game {input_shape}")
 
 
 approximator_model = create_model(input_shape, action_space)
-# approximator_model.load_weights(MODEL_PATH)
+approximator_model.load_weights(latest)
 
 # ===== INITIALISATION ======
 frame_cnt = 0
@@ -62,7 +71,7 @@ for episode in range(n_episode):
 
     print(f"Running episode {episode}")
     initial_observation = env.reset()
-    state = np.repeat(preprocess(initial_observation), 5).reshape(state_shape)
+    state = np.repeat(preprocess(initial_observation), time_channels_size+1).reshape(state_shape)
     is_done = False
 
     # next_state = initial_state.copy()  # To remove all the information of the last episode

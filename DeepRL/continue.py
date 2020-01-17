@@ -8,21 +8,16 @@ import time
 import gym
 import numpy as np
 import tensorflow as tf
-# from tensorflow.keras import models, layers
+from tensorflow.keras import models, layers
 import psutil
 
 from utils import collect_experience_hidden_action, preprocess, image_grid, plot_to_image
 from model import create_model
 
-import sampling
-
 process = psutil.Process(os.getpid())
 
 
 collect_experience = collect_experience_hidden_action
-take_sample = sampling.prioritized_experience_sampling
-# take_sample = sampling.uniform_sampling
-# take_sample = sampling.random_sampling
 
 # env = gym.make('BreakoutDeterministic-v4')
 env = gym.make('Assault-v0')
@@ -35,7 +30,9 @@ checkpoint_path = os.path.join(
     now,
     "-{epoch:04d}.ckpt"
 )
-
+MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
+latest = tf.train.latest_checkpoint(MODEL_PATH)
+print(f"Loading model from {latest}")
 # checkpoint_dir = os.path.dirname(checkpoint_path)
 
 # # Create a callback that saves the model's weights
@@ -73,8 +70,23 @@ q_mask_shape = (batch_size, action_space)
 
 print(f"Pixel space of the game {input_shape}")
 
+
+# def loss_function(next_qvalues, init_qvalues):
+#     init_q = tf.reduce_max(init_qvalues, axis=1)
+#     next_qvalues = tf.transpose(next_qvalues)
+#     difference = tf.subtract(tf.transpose(init_q), next_qvalues)
+#     return tf.square(difference)
+
+# episode_rewards .append()
+# reward = reward / np.absolute(reward) if reward != 0 else reward # Reward normalisation
+# if reward != 0:
+#     print(reward)
+
 approximator_model = create_model(input_shape, action_space)
 target_model = create_model(input_shape, action_space)
+
+approximator_model.load_weights(latest)
+target_model.load_weights(latest)
 
 exploration_base = 1.02
 exploration_rate = 1
@@ -107,7 +119,7 @@ for episode in range(n_episode):
         print("===> Updated weights")
 
     exploration_rate = np.power(exploration_base, -episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
-    # exploration_rate = 1-(episode*1/n_episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
+    exploration_rate = 1-(episode*1/n_episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
 
     print(f"Running episode {episode} with exploration rate: {exploration_rate}")
     # print(is_done)
@@ -153,15 +165,8 @@ for episode in range(n_episode):
             env.render()
 
     print(f"Number of frames in memory {len(D)}")
-    if take_sample.__name__ == 'prioritized_experience_sampling':
-        print("Uses Prioritised Experience Replay Sampling")
-        experience_batch = take_sample(D, approximator_model, target_model, batch_size, action_space)
-    elif take_sample.__name__ == 'uniform_sampling':
-        print("Uses Uniform Experience Replay Sampling")
-        experience_batch = take_sample(D, batch_size)
-    else:
-        print("Uses Random Experience Replay Sampling")
-        experience_batch = take_sample(D, batch_size)
+
+    experience_batch = random.sample(D, k=batch_size)
 
     # Gather initial and next state from memory for each batch item
     set_of_batch_initial_states = tf.constant([exp[0][:, :, :-1] for exp in experience_batch])
@@ -202,7 +207,7 @@ for episode in range(n_episode):
         tf.summary.scalar('episode_nr_frames', frame_cnt, step=episode)
         tf.summary.scalar('episode_exploration_rate', exploration_rate, step=episode)
         tf.summary.scalar('episode_mem_usage', memory_usage, step=episode)
-        tf.summary.scalar('episode_mem_usage_in_GB', np.round(memory_usage/1024/1024/1024), step=episode)
+        tf.summary.scalar('episode_mem_usage_in_GB', np.round((memory_usage/1024)/1024), step=episode)
         tf.summary.scalar('episode_frames_per_sec', np.round(frame_cnt/time_end, 2), step=episode)
         # print(np.shape(experience_batch[0][0][:, :, 0]))
         tf.summary.image('episode_example_state', episode_image, step=episode)
