@@ -12,12 +12,12 @@ from tensorflow.keras import models, layers
 import psutil
 import pommerman
 from pommerman import agents, constants
-from DeepRL.sampling import prioritized_experience_sampling_pommerman
+from DeepRL.sampling import prioritized_experience_sampling_3
 from DeepRL.utils import plot_to_image, image_grid_pommerman
 
 ### =========== HELPER FUNCTIONS =========== ###
 
-take_sample = prioritized_experience_sampling_pommerman
+take_sample = prioritized_experience_sampling_3
 
 
 def preprocess(img):
@@ -106,7 +106,7 @@ def main():
 
     ### =========== (HYPER)PARAMETERS AND VARIABLES =========== ###
 
-    LIST_SIZE = 60000
+    LIST_SIZE = 10000
     D = deque(maxlen=LIST_SIZE)
     DISCOUNT_RATE = 0.8
     TAU = 0
@@ -123,6 +123,7 @@ def main():
     EXPLORATION_BASE = 1.02
     EXPLORATION_RATE = 1
     MINIMAL_EXPLORATION_RATE = 0.01
+    TD_ERROR_DEFAULT = 0
 
     print(f"Pixel space of the game {INPUT_SHAPE}")
     approximator_model = create_model(INPUT_SHAPE, ACTION_SPACE)
@@ -143,7 +144,7 @@ def main():
             state_obs, reward, done, info, pixels = env.step2(
                 actions_all_agents)
 
-            D.append((preprocess(pixels), reward[0], actions_all_agents[0]))
+            D.append([preprocess(pixels), reward[0], actions_all_agents[0], TD_ERROR_DEFAULT])
         print('Init episode {} finished'.format(n))
 
     for episode in range(N_EPISODES):
@@ -157,7 +158,7 @@ def main():
 
         # EXPLORATION_RATE = np.power(EXPLORATION_BASE, -episode) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
         EXPLORATION_RATE = 1 - \
-            (episode*10/N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
+            (episode*1/N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
 
         print(
             f"Running episode {episode} with exploration rate: {EXPLORATION_RATE}")
@@ -177,13 +178,15 @@ def main():
         episode_rewards = []
         frame_cnt = 0
 
+        acc_actions = []
         while not done:
             # https://danieltakeshi.github.io/2016/11/25/frame-skipping-and-preprocessing-for-deep-q-networks-on-atari-2600-games/
             frame_cnt += 1
             TAU += 1
 
             actions_all_agents = env.act(state_obs)
-
+            action = actions_all_agents[0]
+            
             if not random.choices((True, False), (EXPLORATION_RATE, 1 - EXPLORATION_RATE))[0]:
                 # Greedy action
                 init_mask = tf.ones([1, ACTION_SPACE])
@@ -197,15 +200,21 @@ def main():
             state_obs, reward, done, info, pixels = env.step2(
                 actions_all_agents)
 
+            acc_actions.append(action)
             if done:
                 last_action = "Place bomb" if actions_all_agents[0] == 5 else "Something else"
                 print(f"Last action: {last_action}")
+                with file_writer_rewards.as_default():
+                    tf.summary.histogram('action_taken', acc_actions, step=episode)
 
             episode_rewards.append(reward[0])
-            D.append((preprocess(pixels), reward[0], actions_all_agents[0]))
+            D.append([preprocess(pixels), reward[0], actions_all_agents[0], TD_ERROR_DEFAULT])
 
-        print(f"Number of frames in memory {len(D)}")
-        experience_batch = take_sample(D, approximator_model, target_model, BATCH_SIZE, ACTION_SPACE)
+        memory_length = len(D)
+        print(f"Number of frames in memory {memory_length}")
+        # experience_batch = take_sample(D, approximator_model, target_model, BATCH_SIZE, ACTION_SPACE)
+        ids = take_sample(D, BATCH_SIZE)
+        experience_batch = [(D[idx], D[idx+1]) for idx in ids if idx < memory_length-1]
 
         set_of_batch_states = tf.constant([exp[0][0] for exp in experience_batch])
         set_of_batch_next_states = tf.constant([exp[1][0] for exp in experience_batch])
@@ -213,7 +222,7 @@ def main():
         # Gather actions for each batch item
         set_of_batch_actions = tf.one_hot(
             [exp[0][2] for exp in experience_batch], ACTION_SPACE)
-       
+
         # Maybe unnecessary - We are using the double q mask instead.
         next_q_mask = tf.ones([BATCH_SIZE, ACTION_SPACE])
 
@@ -221,10 +230,10 @@ def main():
             set_of_batch_states, set_of_batch_states.shape + [1]), dtype=tf.float32)
         double_q_mask = tf.one_hot(tf.argmax(approximator_model.predict(
             [set_of_batch_states, next_q_mask]), axis=1), ACTION_SPACE)  # http://arxiv.org/abs/1509.06461
-        
+
         set_of_batch_next_states = tf.cast(tf.reshape(set_of_batch_next_states, set_of_batch_next_states.shape + [1]), dtype=tf.float32)
         next_q_values = tf.constant(target_model.predict([set_of_batch_next_states, double_q_mask]))
-        
+
         # Gather rewards for each batch item
         set_of_batch_rewards = tf.constant(
             [exp[0][1] for exp in experience_batch], dtype=next_q_values.dtype)
@@ -234,7 +243,9 @@ def main():
             f"Number of information yielding states: {episode_nonzero_reward_states}")
 
         next_q = set_of_batch_rewards + (DISCOUNT_RATE * tf.reduce_max(next_q_values, axis=1))
-
+        init_q_values = approximator_model.predict([set_of_batch_states, set_of_batch_actions])
+        init_q = tf.reduce_max(init_q_values, axis=1)
+        td_error = (next_q-init_q).numpy()
         # print("------"*15)
         # tf.print(next_q)
         # tf.print(tf.reduce_max(tmp_init_q_values, axis=1))
@@ -247,6 +258,9 @@ def main():
 
         history = approximator_model.fit(
             [set_of_batch_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback])
+
+        for idx, exp in enumerate(experience_batch):
+            exp[0][3] = td_error[idx]
 
         # Wrap up
         loss = history.history.get("loss", [0])[0]

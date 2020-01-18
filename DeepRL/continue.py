@@ -10,15 +10,16 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import models, layers
 import psutil
-
 from utils import collect_experience_hidden_action, preprocess, image_grid, plot_to_image
 from model import create_model
+
+import sampling
 
 process = psutil.Process(os.getpid())
 
 
 collect_experience = collect_experience_hidden_action
-
+take_sample = sampling.prioritized_experience_sampling
 # env = gym.make('BreakoutDeterministic-v4')
 env = gym.make('Assault-v0')
 
@@ -30,7 +31,7 @@ checkpoint_path = os.path.join(
     now,
     "-{epoch:04d}.ckpt"
 )
-MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
+MODEL_PATH = "models/20200117-232824"
 latest = tf.train.latest_checkpoint(MODEL_PATH)
 print(f"Loading model from {latest}")
 # checkpoint_dir = os.path.dirname(checkpoint_path)
@@ -165,8 +166,15 @@ for episode in range(n_episode):
             env.render()
 
     print(f"Number of frames in memory {len(D)}")
-
-    experience_batch = random.sample(D, k=batch_size)
+    if take_sample.__name__ == 'prioritized_experience_sampling':
+        print("Uses Prioritised Experience Replay Sampling")
+        experience_batch = take_sample(D, approximator_model, target_model, batch_size, action_space)
+    elif take_sample.__name__ == 'uniform_sampling':
+        print("Uses Uniform Experience Replay Sampling")
+        experience_batch = take_sample(D, batch_size)
+    else:
+        print("Uses Random Experience Replay Sampling")
+        experience_batch = take_sample(D, batch_size)
 
     # Gather initial and next state from memory for each batch item
     set_of_batch_initial_states = tf.constant([exp[0][:, :, :-1] for exp in experience_batch])
@@ -195,7 +203,7 @@ for episode in range(n_episode):
     memory_usage = process.memory_info().rss
     tmp = random.choice(experience_batch)
     # print(tmp.shape)
-    episode_image = plot_to_image(image_grid(tmp, env.get_action_meanings()))
+    episode_image = plot_to_image(image_grid(tmp, env.unwrapped.get_action_meanings()))
 
     print(f"Current memory consumption is {memory_usage}")
     print(f"Loss of episode {episode} is {loss} and took {time_end} seconds")
@@ -207,7 +215,7 @@ for episode in range(n_episode):
         tf.summary.scalar('episode_nr_frames', frame_cnt, step=episode)
         tf.summary.scalar('episode_exploration_rate', exploration_rate, step=episode)
         tf.summary.scalar('episode_mem_usage', memory_usage, step=episode)
-        tf.summary.scalar('episode_mem_usage_in_GB', np.round((memory_usage/1024)/1024), step=episode)
+        tf.summary.scalar('episode_mem_usage_in_GB', np.round(memory_usage/1024/1024/1024), step=episode)
         tf.summary.scalar('episode_frames_per_sec', np.round(frame_cnt/time_end, 2), step=episode)
         # print(np.shape(experience_batch[0][0][:, :, 0]))
         tf.summary.image('episode_example_state', episode_image, step=episode)
@@ -221,7 +229,6 @@ for episode in range(n_episode):
         model_target_dir = checkpoint_path.format(epoch=episode)
         approximator_model.save_weights(model_target_dir)
         print(f"Model was saved under {model_target_dir}")
-
 
 # TODO: [x] Simplify the loss function
 # TODO: [x] Apply the reward

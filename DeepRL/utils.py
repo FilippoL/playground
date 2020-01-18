@@ -74,7 +74,7 @@ def collect_experience_hidden_action(env, action, state_shape, time_channels_siz
             acc_obs[:, :, obs_cnt] = acc_obs[:, :, -1] if is_done else preprocess(next_observation)
         else:
             next_observation, reward, is_done, _ = env.step(-1)
-        acc_reward += reward
+        acc_reward += reward if not is_done else -25
 
     return acc_obs, acc_reward, is_done, frame_cnt
 
@@ -123,7 +123,7 @@ def image_grid(experience, meanings):
     action = experience[2]
     figure = plt.figure(figsize=(10, 5))
     figure.suptitle(f"Action {meanings[action]} and received {reward}", fontsize=16)
-    time_channel = 1
+    time_channel = img.shape[2]
     for i in range(time_channel):
         # Start next subplot.
         plt.subplot(1, time_channel, i + 1, title=f"Frame {i}")

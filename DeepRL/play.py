@@ -24,15 +24,15 @@ now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 # MODEL_PATH = "file:///C:/Users/ohund/workspace/playground/DeepRL/models/20200115-213917/checkpoint"
 MODEL_PATH = "models/20200115-141757-Best-One"
 MODEL_PATH = "models/20200115-020016-Longest-Run-Crash"
-MODEL_PATH = "models/20200116-155707"
 MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
+MODEL_PATH = "models/20200117-232824"
 latest = tf.train.latest_checkpoint(MODEL_PATH)
 print(f"Loading model from {latest}")
 
 # file_writer_qs = tf.summary.create_file_writer(log_dir + "/qs")
 # file_writer.set_as_default()
 
-action_meanings = env.get_action_meanings()
+action_meanings = env.unwrapped.get_action_meanings()
 discount_rate = 0.8
 action_space = env.action_space.n
 time_channels_size = 2
