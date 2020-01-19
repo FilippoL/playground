@@ -11,7 +11,7 @@ import tensorflow as tf
 # from tensorflow.keras import models, layers
 import psutil
 
-from utils import collect_experience_hidden_action, preprocess, image_grid, plot_to_image
+from utils import collect_experience_hidden_action, preprocess, image_grid, plot_to_image, exploration_exponential_decay, exploration_linear_decay, exploration_periodic_decay
 from model import create_model
 
 import sampling
@@ -55,7 +55,7 @@ file_writer_qs = tf.summary.create_file_writer(log_dir + "/metrics")
 # file_writer.set_as_default()
 
 # D = list()
-list_size = 10000
+list_size = 6000
 D = deque(maxlen=list_size)
 # D = RingBuf(list_size)
 discount_rate = 0.99
@@ -67,8 +67,8 @@ skip_frames = 2
 input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [time_channels_size]
 state_shape = list(np.zeros(input_shape).shape)[:2] + [time_channels_size+1]
 batch_size = 250
-N = list_size
-n_episode = 2000
+N = batch_size
+n_episode = 1000
 q_mask_shape = (batch_size, action_space)
 
 print(f"Pixel space of the game {input_shape}")
@@ -78,16 +78,18 @@ target_model = create_model(input_shape, action_space)
 
 exploration_base = 1.02
 exploration_rate = 1
+episodes_per_cycle = 25
 minimal_exploration_rate = 0.01
 
 # ===== INITIALISATION ======
 frame_cnt = 0
 prev_lives = 5
-acc_nonzeros = []
-acc_actions = []
+
 is_done = False
 env.reset()
 td_err_default = 0
+acc_nonzeros = []
+acc_actions = []
 
 for n in range(N):
 
@@ -104,6 +106,7 @@ for n in range(N):
 for episode in range(n_episode):
     start_time = time.time()
 
+    acc_actions = []
     print(f" ------------- Start memory trace {process.memory_info().rss} ------------")
 
     if tau >= max_tau:
@@ -111,8 +114,9 @@ for episode in range(n_episode):
         target_model.set_weights(approximator_model.get_weights())
         print("===> Updated weights")
 
-    # exploration_rate = np.power(exploration_base, -episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
-    exploration_rate = 1-(episode*1/n_episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
+    exploration_rate = exploration_exponential_decay(episode, exploration_base)
+    # exploration_rate = exploration_linear_decay(episode, n_episode)
+    # exploration_rate = exploration_periodic_decay(episode, episodes_per_cycle)
 
     print(f"Running episode {episode} with exploration rate: {exploration_rate}")
 
@@ -159,6 +163,7 @@ for episode in range(n_episode):
     next_q = set_of_batch_rewards + (discount_rate * tf.reduce_max(next_q_values, axis=1))
 
     init_q_values = approximator_model.predict([set_of_batch_initial_states, set_of_batch_actions])
+    # init_q_values = approximator_model.predict([set_of_batch_initial_states, next_q_mask])
     init_q = tf.reduce_max(init_q_values, axis=1)
     td_error = (next_q-init_q).numpy()
 
@@ -172,7 +177,7 @@ for episode in range(n_episode):
     first_preprocess = preprocess(initial_observation)
     state = np.repeat(first_preprocess, time_channels_size+1).reshape(state_shape)
     is_done = False
-    acc_actions = []
+    init_mask = tf.ones([1, action_space])
     while not is_done:
         # https://danieltakeshi.github.io/2016/11/25/frame-skipping-and-preprocessing-for-deep-q-networks-on-atari-2600-games/
         frame_cnt += 1
@@ -181,8 +186,7 @@ for episode in range(n_episode):
         if do_explore:
             action = env.action_space.sample()
         else:
-            # Greedy action
-            init_mask = tf.ones([1, action_space])
+            # Greedy action 
             init_state = state[:, :, :-1]
             q_values = approximator_model.predict([tf.reshape(init_state, [1] + input_shape), init_mask])
             action = np.argmax(q_values)
@@ -231,6 +235,7 @@ for episode in range(n_episode):
         if (episode+1) % 5 == 0:
             acc_nonzeros.append(episode_nonzero_reward_states)
             tf.summary.histogram('episode_nonzero_reward_states', acc_nonzeros, step=(episode+1)//5)
+            acc_nonzeros = []
         else:
             acc_nonzeros.append(episode_nonzero_reward_states)
     if (episode+1) % 50 == 0:
@@ -239,6 +244,7 @@ for episode in range(n_episode):
         print(f"Model was saved under {model_target_dir}")
 
 
+# https://stats.stackexchange.com/a/313881
 # TODO: [x] Simplify the loss function
 # TODO: [x] Apply the reward
 # TODO: [x] Rethink memory handling

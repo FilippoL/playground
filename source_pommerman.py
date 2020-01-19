@@ -294,6 +294,7 @@ def main():
                 acc_nonzeros.append(episode_nonzero_reward_states)
                 tf.summary.histogram(
                     'episode_nonzero_reward_states', acc_nonzeros, step=(episode+1)//5)
+                acc_nonzeros = []
             else:
                 acc_nonzeros.append(episode_nonzero_reward_states)
         if (episode+1) % 50 == 0:

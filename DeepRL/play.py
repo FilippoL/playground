@@ -25,7 +25,7 @@ now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 MODEL_PATH = "models/20200115-141757-Best-One"
 MODEL_PATH = "models/20200115-020016-Longest-Run-Crash"
 MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
-MODEL_PATH = "models/20200117-232824"
+MODEL_PATH = "models/20200119-004854"
 latest = tf.train.latest_checkpoint(MODEL_PATH)
 print(f"Loading model from {latest}")
 

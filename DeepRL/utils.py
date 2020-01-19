@@ -79,6 +79,27 @@ def collect_experience_hidden_action(env, action, state_shape, time_channels_siz
     return acc_obs, acc_reward, is_done, frame_cnt
 
 
+def collect_experience_hidden_action_no_penalty(env, action, state_shape, time_channels_size, skip_frames):
+    next_observation, reward, is_done, _ = env.step(action)
+    acc_obs = np.zeros(state_shape)
+    acc_obs[:, :, 0] = preprocess(next_observation)
+    acc_reward = reward
+    frame_cnt = 1
+    obs_cnt = 0
+    for i in range(1, (time_channels_size*skip_frames)+1):
+        frame_cnt += 1
+        if i % skip_frames == 0:
+            obs_cnt += 1
+            # print(f"Setting observation: {obs_cnt}")
+            next_observation, reward, is_done, _ = env.step(env.action_space.sample())
+            acc_obs[:, :, obs_cnt] = acc_obs[:, :, -1] if is_done else preprocess(next_observation)
+        else:
+            next_observation, reward, is_done, _ = env.step(-1)
+        acc_reward += reward if not is_done else 0
+
+    return acc_obs, acc_reward, is_done, frame_cnt
+
+
 def collect_experience_stored_actions(env, action, state_shape, time_channels_size, skip_frames):
     next_observation, reward, is_done, _ = env.step(action)
     acc_obs = np.zeros(state_shape)
@@ -192,3 +213,15 @@ def downsample(img):
 
 def preprocess(img):
     return standardize(to_grayscale(downsample(img)))
+
+
+def exploration_periodic_decay(episode, episodes_per_cycle=10, minimal_exploration_rate=0.1):
+    return max(minimal_exploration_rate, np.cos(episode/episodes_per_cycle*(np.pi-(np.pi*0.5))))
+
+
+def exploration_exponential_decay(episode, exploration_base=1.01, minimal_exploration_rate=0.1):
+    return max(minimal_exploration_rate, np.power(exploration_base, -episode))
+
+
+def exploration_linear_decay(episode, n_episodes=1000, minimal_exploration_rate=0.1):
+    return max(minimal_exploration_rate, 1-(episode*1/n_episodes))
