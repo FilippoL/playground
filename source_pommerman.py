@@ -214,7 +214,7 @@ def main():
         print(f"Number of frames in memory {memory_length}")
         # experience_batch = take_sample(D, approximator_model, target_model, BATCH_SIZE, ACTION_SPACE)
         ids = take_sample(D, BATCH_SIZE)
-        experience_batch = [(D[idx], D[idx+1]) for idx in ids if idx < memory_length-1]
+        experience_batch = [(D[idx], D[idx+1]) if idx < memory_length-1 else (D[idx-1], D[idx]) for idx in ids]
 
         set_of_batch_states = tf.constant([exp[0][0] for exp in experience_batch])
         set_of_batch_next_states = tf.constant([exp[1][0] for exp in experience_batch])

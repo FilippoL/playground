@@ -55,7 +55,7 @@ file_writer_qs = tf.summary.create_file_writer(log_dir + "/metrics")
 # file_writer.set_as_default()
 
 # D = list()
-list_size = 15000
+list_size = 10000
 D = deque(maxlen=list_size)
 # D = RingBuf(list_size)
 discount_rate = 0.99
