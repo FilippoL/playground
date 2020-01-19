@@ -38,7 +38,7 @@ FILE_NAMES = [
     'AgentDummy-No-Background', 'Agent0-No-Background', 'Agent1-No-Background',
     'Agent2-No-Background', 'Agent3-No-Background', 'X-No-Background',
     'Agent0-Team', 'Agent1-Team', 'Agent2-Team', 'Agent3-Team',
-    'Agent0-Team-No-Background', 'Agent1-Team-No-Background', 
+    'Agent0-Team-No-Background', 'Agent1-Team-No-Background',
     'Agent2-Team-No-Background', 'Agent3-Team-No-Background',
 ]
 IMAGES_DICT = {
@@ -66,7 +66,7 @@ FONTS_FILE_NAMES = ['Cousine-Regular.ttf']
 # Human view board configurations
 BORDER_SIZE = 20
 MARGIN_SIZE = 10
-TILE_SIZE = 50
+TILE_SIZE = 20
 BACKGROUND_COLOR = (41, 39, 51, 255)
 TILE_COLOR = (248, 221, 82, 255)
 TEXT_COLOR = (170, 170, 170, 255)
