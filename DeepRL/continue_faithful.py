@@ -8,10 +8,9 @@ import time
 import gym
 import numpy as np
 import tensorflow as tf
-# from tensorflow.keras import models, layers
+from tensorflow.keras import models, layers
 import psutil
-
-from utils import collect_experience_hidden_action, collect_experience_hidden_action_faithful, preprocess, image_grid, plot_to_image, exploration_exponential_decay, exploration_linear_decay, exploration_periodic_decay
+from utils import collect_experience_hidden_action, preprocess, image_grid, plot_to_image, exploration_linear_decay, exploration_exponential_decay
 from model import create_model, create_model_faithful
 
 import sampling
@@ -19,11 +18,8 @@ import sampling
 process = psutil.Process(os.getpid())
 
 
-collect_experience = collect_experience_hidden_action_faithful
-take_sample = sampling.prioritized_experience_sampling_3
-# take_sample = sampling.uniform_sampling
-# take_sample = sampling.random_sampling
-
+collect_experience = collect_experience_hidden_action
+take_sample = sampling.prioritized_experience_sampling
 # env = gym.make('BreakoutDeterministic-v4')
 env = gym.make('Assault-v0')
 
@@ -35,7 +31,9 @@ checkpoint_path = os.path.join(
     now,
     "-{epoch:04d}.ckpt"
 )
-
+MODEL_PATH = "models/20200119-235832-Better-PER"
+latest = tf.train.latest_checkpoint(MODEL_PATH)
+print(f"Loading model from {latest}")
 # checkpoint_dir = os.path.dirname(checkpoint_path)
 
 # # Create a callback that saves the model's weights
@@ -68,41 +66,43 @@ input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [time_chann
 state_shape = list(np.zeros(input_shape).shape)[:2] + [time_channels_size+1]
 batch_size = 250
 N = batch_size
-n_episode = 1000
+n_episode = 2000
 q_mask_shape = (batch_size, action_space)
 action_meanings = env.unwrapped.get_action_meanings()
 
 print(f"Pixel space of the game {input_shape}")
 
+
+# def loss_function(next_qvalues, init_qvalues):
+#     init_q = tf.reduce_max(init_qvalues, axis=1)
+#     next_qvalues = tf.transpose(next_qvalues)
+#     difference = tf.subtract(tf.transpose(init_q), next_qvalues)
+#     return tf.square(difference)
+
+# episode_rewards .append()
+# reward = reward / np.absolute(reward) if reward != 0 else reward # Reward normalisation
+# if reward != 0:
+#     print(reward)
+
 approximator_model = create_model_faithful(input_shape, action_space)
 target_model = create_model_faithful(input_shape, action_space)
 
+approximator_model.load_weights(latest)
+target_model.load_weights(latest)
+
 exploration_base = 1.02
 exploration_rate = 1
-episodes_per_cycle = 50
-minimal_exploration_rate = 0.001
+minimal_exploration_rate = 0.01
 
 # ===== INITIALISATION ======
 frame_cnt = 0
 prev_lives = 5
-
 is_done = False
 env.reset()
+
 td_err_default = 0
 acc_nonzeros = []
 acc_actions = []
-
-for n in range(N):
-
-    if is_done:
-        env.reset()
-
-    action = env.action_space.sample()
-    state, acc_reward, is_done, _ = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
-    D.append([state, acc_reward, action, acc_reward])
-    env.render()
-
-# experience_batch = D
 
 for n in range(N):
 

@@ -165,8 +165,11 @@ def prioritized_experience_sampling_3(memory, batch_size, beta=0.4, a=0.6, e=0.0
 
     N = len(memory)
 
-    error_ = np.abs([exp[3] for exp in memory]) + e
+    error_ = np.abs([exp[3] for exp in memory]) 
+    for exp, err in zip(memory, error_):
+        exp[3] = err
 
+    error_ = error_ + e
     probality_ = error_ ** a / (np.sum(error_) ** a)
 
     inversed_probability = (1/(probality_ * N)) ** beta
