@@ -116,7 +116,7 @@ for episode in range(n_episode):
 
     # Train on the experience batch
     print(f"Use Priority Experience Replay Sampling")
-    ids = sampling.prioritized_experience_sampling_3(D, batch_size)
+    ids, importance = sampling.prioritized_experience_sampling_3(D, batch_size)
     max_td_err = max(np.abs([exp[3] for exp in D]))
     experience_batch = [D[idx] for idx in ids]
     history, nonzero_rewards = utils.train_batch(experience_batch, approximator_model, target_model, action_space, discount_rate, tensorflow_callback)

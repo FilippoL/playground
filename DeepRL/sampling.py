@@ -216,10 +216,10 @@ def prioritized_experience_sampling_pommerman(memory, approximator_model, target
 
     inversed_probability = (1/(probality_ * N)) ** beta
 
-    picked_indices = random.choices(range(len(memory)-1), inversed_probability[:-1], k=batch_size)
+    picked_indices = random.choices(range(len(memory)-1), probality_[:-1], k=batch_size)
     initial_states_result = memory_array[picked_indices]
     next_states_result = memory_array[np.array(picked_indices)+1]
 
-    return list(zip(initial_states_result, next_states_result))
+    return list(zip(initial_states_result, next_states_result)), inversed_probability
 
 
