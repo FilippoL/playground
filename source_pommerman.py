@@ -2,30 +2,28 @@ import datetime
 import os
 import platform
 import random
-from collections import deque
 import time
+from collections import deque
 
-# import gym
 import numpy as np
+import psutil
 import tensorflow as tf
 from tensorflow.keras import models, layers
-import psutil
+
 import pommerman
-from pommerman import agents, constants
 from DeepRL.sampling import prioritized_experience_sampling_3
 from DeepRL.utils import plot_to_image, image_grid_pommerman
+from pommerman import agents, constants
 
-### =========== HELPER FUNCTIONS =========== ###
-
+# =========== HELPER FUNCTIONS =========== #
 take_sample = prioritized_experience_sampling_3
 
 
 def preprocess(img):
-    return img/255
-
-### =========== CREATE THE CNN =========== ###
+    return img / 255
 
 
+# =========== CREATE THE CNN =========== #
 def create_model(input_shape, action_space):
     input = layers.Input(input_shape, dtype=tf.float32)
     mask = layers.Input(action_space, dtype=tf.float32)
@@ -60,8 +58,8 @@ def create_model(input_shape, action_space):
 
     with tf.name_scope("Q-Layer"):
         output = value_out + \
-            tf.math.subtract(advantage_out, tf.reduce_mean(
-                advantage_out, axis=1, keepdims=True))
+                 tf.math.subtract(advantage_out, tf.reduce_mean(
+                     advantage_out, axis=1, keepdims=True))
         out_q_values = tf.multiply(output, mask)
     # out_q_values = tf.reshape(out_q_values, [1,-1])
     model = models.Model(inputs=[input, mask], outputs=out_q_values)
@@ -76,7 +74,7 @@ def main():
 
     process = psutil.Process(os.getpid())
 
-    # Create the environment
+    # MARK: - Create the environment
     agent_list = [
         agents.RandomAgent(),
         agents.SimpleAgent(),
@@ -104,8 +102,7 @@ def main():
         log_dir=log_dir, profile_batch=5, histogram_freq=1)
     file_writer_rewards = tf.summary.create_file_writer(log_dir + "/metrics")
 
-    ### =========== (HYPER)PARAMETERS AND VARIABLES =========== ###
-
+    # =========== (HYPER)PARAMETERS AND VARIABLES =========== #
     LIST_SIZE = 10000
     D = deque(maxlen=LIST_SIZE)
     DISCOUNT_RATE = 0.8
@@ -113,27 +110,36 @@ def main():
     MAX_TAU = 2000
     ACTION_SPACE = env.action_space.n
     TIME_CHANNELS_SIZE = 1
-    SKIP_FRAMES = 1
     INPUT_SHAPE = list(env.get_observation_space()) + [TIME_CHANNELS_SIZE]
-    STATE_SHAPE = INPUT_SHAPE[:2] + [TIME_CHANNELS_SIZE+1]
     BATCH_SIZE = 250
     N = BATCH_SIZE
     N_EPISODES = 1000
-    Q_MASK_SHAPE = (BATCH_SIZE, ACTION_SPACE)
     EXPLORATION_BASE = 1.02
     EXPLORATION_RATE = 1
     MINIMAL_EXPLORATION_RATE = 0.01
     TD_ERROR_DEFAULT = 0
-
     print(f"Pixel space of the game {INPUT_SHAPE}")
+
+    # ================== CONTINUE TRAIN FROM LOADED MODEL ==================== #
+    # approximator_model = create_model(INPUT_SHAPE, ACTION_SPACE)
+    # target_model = create_model(INPUT_SHAPE, ACTION_SPACE)
+    #
+    # MODEL_PATH = "models/20200119-121818"
+    # latest = tf.train.latest_checkpoint(MODEL_PATH)
+    # print(f"Loading model from {latest}")
+    #
+    # approximator_model.load_weights(latest)
+    # target_model.load_weights(latest)
+    # ======================================================================== #
+
+    # =================== START WITH NEW MODEL =============================== #
     approximator_model = create_model(INPUT_SHAPE, ACTION_SPACE)
     target_model = create_model(INPUT_SHAPE, ACTION_SPACE)
+    # ======================================================================== #
 
     # ===== INITIALISATION ======
-    frame_cnt = 0
-    prev_lives = 5
     acc_nonzeros = []
-    acc_actions = []
+    actions_available = [str(action).split(".")[1] for action in constants.Action]
 
     print("Running the init")
     for n in range(N):
@@ -157,8 +163,8 @@ def main():
             print("===> Updated weights")
 
         # EXPLORATION_RATE = np.power(EXPLORATION_BASE, -episode) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
-        EXPLORATION_RATE = 1 - \
-            (episode*1/N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
+        EXPLORATION_RATE = 1 - (
+                episode * 1 / N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
 
         print(
             f"Running episode {episode} with exploration rate: {EXPLORATION_RATE}")
@@ -179,6 +185,8 @@ def main():
         frame_cnt = 0
 
         acc_actions = []
+        action_str = ""
+
         while not done:
             # https://danieltakeshi.github.io/2016/11/25/frame-skipping-and-preprocessing-for-deep-q-networks-on-atari-2600-games/
             frame_cnt += 1
@@ -186,7 +194,7 @@ def main():
 
             actions_all_agents = env.act(state_obs)
             action = actions_all_agents[0]
-            
+
             if not random.choices((True, False), (EXPLORATION_RATE, 1 - EXPLORATION_RATE))[0]:
                 # Greedy action
                 init_mask = tf.ones([1, ACTION_SPACE])
@@ -194,27 +202,27 @@ def main():
                 q_values = approximator_model.predict(
                     [tf.reshape(init_state, [1] + INPUT_SHAPE), init_mask])
                 action = np.argmax(q_values)
-
                 actions_all_agents[0] = action
+
+            print(action_str) if action_str != f"Action taken: {actions_available[action]}" else None
 
             state_obs, reward, done, info, pixels = env.step2(
                 actions_all_agents)
 
             acc_actions.append(action)
             if done:
-                last_action = "Place bomb" if actions_all_agents[0] == 5 else "Something else"
-                print(f"Last action: {last_action}")
                 with file_writer_rewards.as_default():
                     tf.summary.histogram('action_taken', acc_actions, step=episode)
 
             episode_rewards.append(reward[0])
             D.append([preprocess(pixels), reward[0], actions_all_agents[0], TD_ERROR_DEFAULT])
+            action_str = f"Action taken: {actions_available[action]}"
 
         memory_length = len(D)
         print(f"Number of frames in memory {memory_length}")
         # experience_batch = take_sample(D, approximator_model, target_model, BATCH_SIZE, ACTION_SPACE)
         ids = take_sample(D, BATCH_SIZE)
-        experience_batch = [(D[idx], D[idx+1]) if idx < memory_length-1 else (D[idx-1], D[idx]) for idx in ids]
+        experience_batch = [(D[idx], D[idx + 1]) if idx < memory_length - 1 else (D[idx - 1], D[idx]) for idx in ids]
 
         set_of_batch_states = tf.constant([exp[0][0] for exp in experience_batch])
         set_of_batch_next_states = tf.constant([exp[1][0] for exp in experience_batch])
@@ -231,21 +239,22 @@ def main():
         double_q_mask = tf.one_hot(tf.argmax(approximator_model.predict(
             [set_of_batch_states, next_q_mask]), axis=1), ACTION_SPACE)  # http://arxiv.org/abs/1509.06461
 
-        set_of_batch_next_states = tf.cast(tf.reshape(set_of_batch_next_states, set_of_batch_next_states.shape + [1]), dtype=tf.float32)
+        set_of_batch_next_states = tf.cast(tf.reshape(set_of_batch_next_states, set_of_batch_next_states.shape + [1]),
+                                           dtype=tf.float32)
         next_q_values = tf.constant(target_model.predict([set_of_batch_next_states, double_q_mask]))
 
         # Gather rewards for each batch item
         set_of_batch_rewards = tf.constant(
             [exp[0][1] for exp in experience_batch], dtype=next_q_values.dtype)
         episode_nonzero_reward_states = (
-            tf.math.count_nonzero(set_of_batch_rewards)/BATCH_SIZE)*100
+                                                tf.math.count_nonzero(set_of_batch_rewards) / BATCH_SIZE) * 100
         print(
             f"Number of information yielding states: {episode_nonzero_reward_states}")
 
         next_q = set_of_batch_rewards + (DISCOUNT_RATE * tf.reduce_max(next_q_values, axis=1))
         init_q_values = approximator_model.predict([set_of_batch_states, set_of_batch_actions])
         init_q = tf.reduce_max(init_q_values, axis=1)
-        td_error = (next_q-init_q).numpy()
+        td_error = (next_q - init_q).numpy()
         # print("------"*15)
         # tf.print(next_q)
         # tf.print(tf.reduce_max(tmp_init_q_values, axis=1))
@@ -269,12 +278,13 @@ def main():
         print(f"Current memory consumption is {memory_usage}")
         print(
             f"Loss of episode {episode} is {loss} and took {time_end} seconds")
-        random_experience_idx = random.choice(range(len(experience_batch)-1))
+        random_experience_idx = random.choice(range(len(experience_batch) - 1))
         random_experience = experience_batch[random_experience_idx][0]
         random_experience_next = experience_batch[random_experience_idx][1]
 
         # print(tmp.shape)
-        episode_image = plot_to_image(image_grid_pommerman(random_experience, random_experience_next, [action for action in constants.Action]))
+        episode_image = plot_to_image(
+            image_grid_pommerman(random_experience, random_experience_next, [action for action in constants.Action]))
         with file_writer_rewards.as_default():
             tf.summary.scalar('episode_rewards', np.sum(
                 episode_rewards), step=episode)
@@ -285,22 +295,22 @@ def main():
                               EXPLORATION_RATE, step=episode)
             tf.summary.scalar('episode_mem_usage', memory_usage, step=episode)
             tf.summary.scalar('episode_frames_per_sec', np.round(
-                frame_cnt/time_end, 2), step=episode)
+                frame_cnt / time_end, 2), step=episode)
             tf.summary.histogram('q-values', next_q_values, step=episode)
 
-            tf.summary.scalar('episode_mem_usage_in_GB', np.round(memory_usage/1024/1024/1024), step=episode)
+            tf.summary.scalar('episode_mem_usage_in_GB', np.round(memory_usage / 1024 / 1024 / 1024), step=episode)
             tf.summary.image('episode_example_state', episode_image, step=episode)
-            if (episode+1) % 5 == 0:
+            if (episode + 1) % 5 == 0:
                 acc_nonzeros.append(episode_nonzero_reward_states)
                 tf.summary.histogram(
-                    'episode_nonzero_reward_states', acc_nonzeros, step=(episode+1)//5)
-                acc_nonzeros = []
+                    'episode_nonzero_reward_states', acc_nonzeros, step=(episode + 1) // 5)
             else:
                 acc_nonzeros.append(episode_nonzero_reward_states)
-        if (episode+1) % 50 == 0:
+        if (episode + 1) % 50 == 0:
             model_target_dir = checkpoint_path.format(epoch=episode)
             approximator_model.save_weights(model_target_dir)
             print(f"Model was saved under {model_target_dir}")
+
 
 # TODO: [x] Simplify the loss function
 # TODO: [x] Apply the reward

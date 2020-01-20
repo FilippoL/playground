@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 import psutil
 
-from utils import preprocess, collect_experience_turtle
+from utils import preprocess, collect_experience
 from model import create_model
 
 
