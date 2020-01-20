@@ -355,7 +355,7 @@ def train_batch(experience_batch, approximator_model, target_model, action_space
 def write_stats(file_writer_rewards, qs, episode, exp, action_meanings, loss, time_end, rewards, frame_cnt, exploration_rate, memory_usage, episode_nonzero_reward_states, acc_actions, all_frames):
 
     # print(tmp.shape)
-    # episode_image = plot_to_image(image_grid(exp, action_meanings))
+    episode_image = plot_to_image(image_grid(exp, action_meanings))
 
     with file_writer_rewards.as_default():
         tf.summary.scalar('episode_rewards', np.sum(rewards), step=episode)
@@ -366,10 +366,10 @@ def write_stats(file_writer_rewards, qs, episode, exp, action_meanings, loss, ti
         tf.summary.scalar('episode_mem_usage_in_GB', np.round(memory_usage/1024/1024/1024), step=episode)
         tf.summary.scalar('episode_frames_per_sec', np.round(frame_cnt/time_end, 2), step=episode)
         tf.summary.scalar('episode_nonzero_reward_states', episode_nonzero_reward_states, step=episode)
-        # tf.summary.image('episode_example_state', episode_image, step=episode)
+        tf.summary.image('episode_example_state', episode_image, step=episode)
         tf.summary.histogram('episode_actions', acc_actions, step=episode)
         tf.summary.histogram('episode_qs', qs, step=episode)
-    if len(all_frames) < 130:
+    # if len(all_frames) < 130:
         # episode_images = plot_to_image(image_grid_for_all_frames(all_frames))
         episode_q_image = plot_to_image(plot_q(qs, action_meanings))
         # tf.summary.image('episode_all_frames', episode_images, step=episode)

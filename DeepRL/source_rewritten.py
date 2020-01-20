@@ -26,7 +26,7 @@ process = psutil.Process(os.getpid())
 # take_sample = sampling.random_sampling
 
 # env = gym.make('BreakoutDeterministic-v4')
-env = gym.make('Assault-v4', frameskip=5)
+env = gym.make('BreakoutDeterministic-v4', frameskip=8)
 
 now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -56,19 +56,19 @@ file_writer_rewards = tf.summary.create_file_writer(log_dir + "/metrics")
 # file_writer.set_as_default()
 
 # D = list()
-list_size = 6000
+list_size = 60000
 D = deque(maxlen=list_size)
 # D = RingBuf(list_size)
 discount_rate = 0.99
 tau = 0
-max_tau = 2000
+max_tau = 5000
 action_space = env.action_space.n
 time_channels_size = 4
 skip_frames = 1
 input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [time_channels_size]
 state_shape = list(np.zeros(input_shape).shape)[:2] + [time_channels_size+1]
-batch_size = 32
-N = batch_size
+batch_size = 256
+N = 4*batch_size
 n_episode = 1000
 q_mask_shape = (batch_size, action_space)
 action_meanings = env.unwrapped.get_action_meanings()
@@ -107,8 +107,8 @@ for episode in range(n_episode):
         target_model.set_weights(approximator_model.get_weights())
         print("===> Updated weights")
 
-    exploration_rate = exploration_exponential_decay(episode, exploration_base)
-    # exploration_rate = exploration_linear_decay(episode, 500)
+    # exploration_rate = exploration_exponential_decay(episode, exploration_base)
+    exploration_rate = exploration_linear_decay(episode, 100)
     # exploration_rate = exploration_periodic_decay(episode, episodes_per_cycle)
 
     print(f"Running episode {episode} with exploration rate: {exploration_rate}")
@@ -163,3 +163,4 @@ for episode in range(n_episode):
 # TODO: [ ] Refactoring and restructuring
 # TODO: [ ] Add states to tensorboard for analysis
 # TODO: [ ] Write simple model run code
+# https://towardsdatascience.com/tutorial-double-deep-q-learning-with-dueling-network-architectures-4c1b3fb7f756
