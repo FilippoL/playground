@@ -41,7 +41,7 @@ def uniform_sampling(memory, K, early_stop=8):
     return batch
 
 
-def prioritized_experience_sampling(memory, approximator_model, target_model, batch_size, action_space, gamma=0.99 ,beta=0.4, a=0.6, e=0.01):
+def prioritized_experience_sampling(memory, approximator_model, target_model, batch_size, action_space, gamma=0.99 ,beta=0.4, a=0.7, e=0.1):
 
     N = len(memory)
     memory_copy = np.array(memory)
@@ -66,7 +66,7 @@ def prioritized_experience_sampling(memory, approximator_model, target_model, ba
     inversed_probability = (1/(probality_ * N)) ** beta
     indices = random.choices(range(N), probality_, k=batch_size)
     batch = random.choices(memory, probality_, k=batch_size)
-    importance = np.array(inversed_probability[indices])
+    importance = np.array(inversed_probability[indices], dtype=np.float32)
     return batch, importance
 
 

@@ -185,7 +185,7 @@ for episode in range(n_episode):
     print(f"Number of information yielding states: {episode_nonzero_reward_states}")
 
     next_q = set_of_batch_rewards + (discount_rate * tf.reduce_max(next_q_values, axis=1))
-    history = approximator_model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback])
+    history = approximator_model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback], sample_weight=importance)
 
     # Wrap up
     loss = history.history.get("loss", [0])[0]
