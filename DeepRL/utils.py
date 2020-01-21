@@ -8,6 +8,7 @@ import tensorflow as tf
 import random
 import tensorboard
 import time
+from DeepRL.sampling import prioritized_experience_sampling_3
 
 tensorboard.plugins.custom_scalar
 
@@ -271,6 +272,21 @@ def initialize_memory(env, memory, N, time_channels_size):
     return env, memory
 
 
+def initialize_memory_pommerman(env, D, N, TD_ERROR_DEFAULT):
+    print("Running the init")
+    for n in range(N):
+        state_obs = env.reset()
+        done = False
+        while not done:
+            actions_all_agents = env.act(state_obs)
+            state_obs, reward, done, info, pixels = env.step2(
+                actions_all_agents)
+
+            D.append([standardize(pixels), reward[0], actions_all_agents[0], TD_ERROR_DEFAULT])
+        print('Init episode {} finished'.format(n))
+    return env, D
+
+
 def play_episode(env, memory, time_channels_size, max_tau, exploration_rate, model, default_td_err, visualize=False):
     initial_observation = env.reset()
     action_space = env.action_space.n
@@ -350,6 +366,52 @@ def train_batch(experience_batch, approximator_model, target_model, action_space
 
     history = approximator_model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback])
     return history, episode_nonzero_reward_states
+
+
+def train_batch_pommerman(D, approximator_model, target_model, ACTION_SPACE, BATCH_SIZE, tensorflow_callback, DISCOUNT_RATE):
+    memory_length = len(D)
+
+    print(f"Number of frames in memory {memory_length}")
+    # experience_batch = take_sample(D, approximator_model, target_model, BATCH_SIZE, ACTION_SPACE)
+    ids = prioritized_experience_sampling_3(D, BATCH_SIZE)
+    experience_batch = [(D[idx], D[idx + 1]) if idx < memory_length - 1 else (D[idx - 1], D[idx]) for idx in ids]
+
+    set_of_batch_states = tf.constant([exp[0][0] for exp in experience_batch])
+    set_of_batch_next_states = tf.constant([exp[1][0] for exp in experience_batch])
+
+    # Gather actions for each batch item
+    set_of_batch_actions = tf.one_hot(
+        [exp[0][2] for exp in experience_batch], ACTION_SPACE)
+
+    # Maybe unnecessary - We are using the double q mask instead.
+    next_q_mask = tf.ones([BATCH_SIZE, ACTION_SPACE])
+
+    set_of_batch_states = tf.cast(tf.reshape(
+        set_of_batch_states, set_of_batch_states.shape + [1]), dtype=tf.float32)
+    double_q_mask = tf.one_hot(tf.argmax(approximator_model.predict(
+        [set_of_batch_states, next_q_mask]), axis=1), ACTION_SPACE)  # http://arxiv.org/abs/1509.06461
+
+    set_of_batch_next_states = tf.cast(tf.reshape(set_of_batch_next_states, set_of_batch_next_states.shape + [1]),
+                                       dtype=tf.float32)
+    next_q_values = tf.constant(target_model.predict([set_of_batch_next_states, double_q_mask]))
+
+    # Gather rewards for each batch item
+    set_of_batch_rewards = tf.constant(
+        [exp[0][1] for exp in experience_batch], dtype=next_q_values.dtype)
+    episode_nonzero_reward_states = (
+                                            tf.math.count_nonzero(set_of_batch_rewards) / BATCH_SIZE) * 100
+    print(
+        f"Number of information yielding states: {episode_nonzero_reward_states}")
+
+    next_q = set_of_batch_rewards + (DISCOUNT_RATE * tf.reduce_max(next_q_values, axis=1))
+    init_q_values = approximator_model.predict([set_of_batch_states, set_of_batch_actions])
+    init_q = tf.reduce_max(init_q_values, axis=1)
+    td_error = (next_q - init_q).numpy()
+
+    history = approximator_model.fit(
+        [set_of_batch_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback])
+
+    return history, episode_nonzero_reward_states, experience_batch, next_q_values, td_error
 
 
 def write_stats(file_writer_rewards, qs, episode, exp, action_meanings, loss, time_end, rewards, frame_cnt, exploration_rate, memory_usage, episode_nonzero_reward_states, acc_actions, all_frames):
