@@ -123,7 +123,7 @@ def image_grid(experience, meanings):
     action = experience[2]
     figure = plt.figure(figsize=(10, 5))
     figure.suptitle(f"Action {meanings[action]} and received {reward}", fontsize=16)
-    time_channel = 1
+    time_channel = img.shape[2]
     for i in range(time_channel):
         # Start next subplot.
         plt.subplot(1, time_channel, i + 1, title=f"Frame {i}")

@@ -62,6 +62,7 @@ discount_rate = 0.99
 tau = 0
 max_tau = 2000
 action_space = env.action_space.n
+action_meanings = env.unwrapped.get_action_meanings()
 time_channels_size = 2
 skip_frames = 2
 input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [time_channels_size]
@@ -125,8 +126,8 @@ for episode in range(n_episode):
         # https://danieltakeshi.github.io/2016/11/25/frame-skipping-and-preprocessing-for-deep-q-networks-on-atari-2600-games/
         frame_cnt += 1
         tau += 1
-
-        if random.choices((True, False), (exploration_rate, 1 - exploration_rate))[0]:
+        do_explore = random.choices((True, False), (exploration_rate, 1 - exploration_rate))[0]
+        if do_explore:
             action = env.action_space.sample()
         else:
             # Greedy action
@@ -151,13 +152,13 @@ for episode in range(n_episode):
         if (episode % 5) == 0:
             with file_writer_rewards.as_default():
                 tf.summary.histogram('action_taken', acc_actions, step=episode)
-            print(f"Render for episode {episode}")
+            print(f"Reward {acc_reward} with action {action_meanings[action]} which was {'explored' if do_explore else 'greedy'}")
             env.render()
 
     print(f"Number of frames in memory {len(D)}")
     if take_sample.__name__ == 'prioritized_experience_sampling':
         print("Uses Prioritised Experience Replay Sampling")
-        experience_batch = take_sample(D, approximator_model, target_model, batch_size, action_space)
+        experience_batch, importance = take_sample(D, approximator_model, target_model, batch_size, action_space, gamma=discount_rate, beta=1-(episode/n_episode))
     elif take_sample.__name__ == 'uniform_sampling':
         print("Uses Uniform Experience Replay Sampling")
         experience_batch = take_sample(D, batch_size)
@@ -192,7 +193,7 @@ for episode in range(n_episode):
     memory_usage = process.memory_info().rss
     tmp = random.choice(experience_batch)
     # print(tmp.shape)
-    episode_image = plot_to_image(image_grid(tmp, env.unwrapped.get_action_meanings()))
+    episode_image = plot_to_image(image_grid(tmp, action_meanings))
 
     print(f"Current memory consumption is {memory_usage}")
     print(f"Loss of episode {episode} is {loss} and took {time_end} seconds")

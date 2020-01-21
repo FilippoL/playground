@@ -8,16 +8,19 @@ import time
 import gym
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import models, layers
+# from tensorflow.keras import models, layers
 import psutil
 
 from utils import collect_experience_hidden_action, preprocess, image_grid, plot_to_image
 from model import create_model
 
+import sampling
+
 process = psutil.Process(os.getpid())
 
 
 collect_experience = collect_experience_hidden_action
+take_sample = sampling.prioritized_experience_sampling
 
 # env = gym.make('BreakoutDeterministic-v4')
 env = gym.make('Assault-v0')
@@ -30,7 +33,7 @@ checkpoint_path = os.path.join(
     now,
     "-{epoch:04d}.ckpt"
 )
-MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
+MODEL_PATH = "models/20200121-203120-Premature-Death"
 latest = tf.train.latest_checkpoint(MODEL_PATH)
 print(f"Loading model from {latest}")
 # checkpoint_dir = os.path.dirname(checkpoint_path)
@@ -59,6 +62,7 @@ discount_rate = 0.99
 tau = 0
 max_tau = 2000
 action_space = env.action_space.n
+action_meanings = env.unwrapped.get_action_meanings()
 time_channels_size = 2
 skip_frames = 2
 input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [time_channels_size]
@@ -94,19 +98,20 @@ minimal_exploration_rate = 0.01
 
 # ===== INITIALISATION ======
 frame_cnt = 0
-prev_lives = 5
+prev_lives = env.unwrapped.ale.lives()
 acc_nonzeros = []
 acc_actions = []
 is_done = False
 env.reset()
 
+lives = prev_lives
 for n in range(N):
-
+    is_done = True if lives < prev_lives else is_done
     if is_done:
         env.reset()
 
     action = env.action_space.sample()
-    state, acc_reward, is_done, _ = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+    state, acc_reward, is_done, frm, lives = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
 
     D.append((state, acc_reward, action))
     env.render()
@@ -119,7 +124,7 @@ for episode in range(n_episode):
         print("===> Updated weights")
 
     exploration_rate = np.power(exploration_base, -episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
-    exploration_rate = 1-(episode*1/n_episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
+    # exploration_rate = 1-(episode*1/n_episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
 
     print(f"Running episode {episode} with exploration rate: {exploration_rate}")
     # print(is_done)
@@ -136,8 +141,8 @@ for episode in range(n_episode):
         # https://danieltakeshi.github.io/2016/11/25/frame-skipping-and-preprocessing-for-deep-q-networks-on-atari-2600-games/
         frame_cnt += 1
         tau += 1
-
-        if random.choices((True, False), (exploration_rate, 1 - exploration_rate))[0]:
+        do_explore = random.choices((True, False), (exploration_rate, 1 - exploration_rate))[0]
+        if False:
             action = env.action_space.sample()
         else:
             # Greedy action
@@ -147,7 +152,8 @@ for episode in range(n_episode):
             action = np.argmax(q_values)
 
         # if collect_experience.__name__ == 'collect_experience_hidden_action':
-        state, acc_reward, is_done, frames_of_collected = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+        state, acc_reward, is_done, frames_of_collected, lives = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+        is_done = True if lives < prev_lives else is_done
         frame_cnt += frames_of_collected
         episode_rewards.append(acc_reward)
 
@@ -161,12 +167,19 @@ for episode in range(n_episode):
         if (episode % 5) == 0:
             with file_writer_rewards.as_default():
                 tf.summary.histogram('action_taken', acc_actions, step=episode)
-            print(f"Render for episode {episode}")
+            print(f"Reward {acc_reward} with action {action_meanings[action]} which was {'explored' if do_explore else 'greedy'}")
             env.render()
 
     print(f"Number of frames in memory {len(D)}")
-
-    experience_batch = random.sample(D, k=batch_size)
+    if take_sample.__name__ == 'prioritized_experience_sampling':
+        print("Uses Prioritised Experience Replay Sampling")
+        experience_batch, importance = take_sample(D, approximator_model, target_model, batch_size, action_space, gamma=discount_rate, beta=1-(episode/n_episode))
+    elif take_sample.__name__ == 'uniform_sampling':
+        print("Uses Uniform Experience Replay Sampling")
+        experience_batch = take_sample(D, batch_size)
+    else:
+        print("Uses Random Experience Replay Sampling")
+        experience_batch = take_sample(D, batch_size)
 
     # Gather initial and next state from memory for each batch item
     set_of_batch_initial_states = tf.constant([exp[0][:, :, :-1] for exp in experience_batch])
@@ -195,7 +208,7 @@ for episode in range(n_episode):
     memory_usage = process.memory_info().rss
     tmp = random.choice(experience_batch)
     # print(tmp.shape)
-    episode_image = plot_to_image(image_grid(tmp, env.get_action_meanings()))
+    episode_image = plot_to_image(image_grid(tmp, action_meanings))
 
     print(f"Current memory consumption is {memory_usage}")
     print(f"Loss of episode {episode} is {loss} and took {time_end} seconds")
@@ -207,7 +220,7 @@ for episode in range(n_episode):
         tf.summary.scalar('episode_nr_frames', frame_cnt, step=episode)
         tf.summary.scalar('episode_exploration_rate', exploration_rate, step=episode)
         tf.summary.scalar('episode_mem_usage', memory_usage, step=episode)
-        tf.summary.scalar('episode_mem_usage_in_GB', np.round((memory_usage/1024)/1024), step=episode)
+        tf.summary.scalar('episode_mem_usage_in_GB', np.round(memory_usage/1024/1024/1024), step=episode)
         tf.summary.scalar('episode_frames_per_sec', np.round(frame_cnt/time_end, 2), step=episode)
         # print(np.shape(experience_batch[0][0][:, :, 0]))
         tf.summary.image('episode_example_state', episode_image, step=episode)
@@ -221,7 +234,6 @@ for episode in range(n_episode):
         model_target_dir = checkpoint_path.format(epoch=episode)
         approximator_model.save_weights(model_target_dir)
         print(f"Model was saved under {model_target_dir}")
-
 
 # TODO: [x] Simplify the loss function
 # TODO: [x] Apply the reward

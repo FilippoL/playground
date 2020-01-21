@@ -10,10 +10,10 @@ import numpy as np
 import tensorflow as tf
 import psutil
 
-from utils import preprocess, collect_experience_turtle
+from utils import preprocess, collect_experience_turtle, collect_experience_hidden_action
 from model import create_model
 
-collect_experience = collect_experience_turtle
+collect_experience = collect_experience_hidden_action
 
 process = psutil.Process(os.getpid())
 
@@ -26,13 +26,15 @@ MODEL_PATH = "models/20200115-141757-Best-One"
 MODEL_PATH = "models/20200115-020016-Longest-Run-Crash"
 MODEL_PATH = "models/20200116-155707"
 MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
+MODEL_PATH = "models/20200121-203120-Premature-Death"
+
 latest = tf.train.latest_checkpoint(MODEL_PATH)
 print(f"Loading model from {latest}")
 
 # file_writer_qs = tf.summary.create_file_writer(log_dir + "/qs")
 # file_writer.set_as_default()
 
-action_meanings = env.get_action_meanings()
+action_meanings = env.unwrapped.get_action_meanings()
 discount_rate = 0.8
 action_space = env.action_space.n
 time_channels_size = 2
@@ -87,7 +89,7 @@ for episode in range(n_episode):
         # action = env.action_space.sample()
         print(f"Executing action: {action_meanings[action]}")
 
-        state, acc_reward, is_done, frames_of_collected = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+        state, acc_reward, is_done, frames_of_collected, _ = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
         state[:, :, :-1] = state[:, :, 1:]
         frame_cnt += frames_of_collected
         episode_rewards.append(acc_reward)

@@ -41,25 +41,33 @@ def uniform_sampling(memory, K, early_stop=8):
     return batch
 
 
-def prioritized_experience_sampling(memory, approximator_model, target_model, batch_size, action_space, beta=0.4, a=0.6, e=0.01):
+def prioritized_experience_sampling(memory, approximator_model, target_model, batch_size, action_space, gamma=0.99 ,beta=0.4, a=0.6, e=0.01):
 
     N = len(memory)
-
-    all_states = np.array(memory)[:, 0]  # extract init_states
+    memory_copy = np.array(memory)
+    all_states = memory_copy[:, 0]  # extract init_states
     next_states = np.array([exp[:, :, :-1] for exp in all_states])
     init_states = np.array([exp[:, :, 1:] for exp in all_states])
+    rewards = np.array(memory_copy[:, 1])
+    actions = np.array(memory_copy[:, 2])
 
-    init_mask = tf.ones([N, action_space])
+    init_mask = tf.keras.utils.to_categorical(actions, action_space)
+    next_mask = np.ones([N, action_space])
 
-    q_values = approximator_model.predict([init_states, init_mask])
-    q_target = target_model.predict([next_states, init_mask])
+    q_init = approximator_model.predict([init_states, init_mask])
+    q_next = target_model.predict([next_states, next_mask])
 
-    error_ = np.abs(q_target - q_values) + e
-    probality_ = np.max(error_ ** a / (np.sum(error_) ** a), axis=1)
+    q_init_max = np.sum(q_init, axis=1)
+    q_next_max = np.max(q_next, axis=1)
+
+    error_ = np.abs(rewards + gamma*q_next_max - q_init_max) + e
+    probality_ = error_ ** a / (np.sum(error_) ** a)
 
     inversed_probability = (1/(probality_ * N)) ** beta
-
-    return random.choices(memory, inversed_probability, k=batch_size)
+    indices = random.choices(range(N), probality_, k=batch_size)
+    batch = random.choices(memory, probality_, k=batch_size)
+    importance = inversed_probability[indices]
+    return batch, importance
 
 
 def prioritized_experience_sampling_pommerman(memory, approximator_model, target_model, batch_size, action_space, beta=0.4, a=0.6, e=0.01):
@@ -69,8 +77,8 @@ def prioritized_experience_sampling_pommerman(memory, approximator_model, target
     memory_array = np.array(memory)
     # all_states = memory_array[:, 0]  # extract init_states
     init_states = np.array([exp for exp in memory_array[:, 0]])
-    next_states = np.roll(init_states, -1) # i+1
-    next_states[-1] = init_states[-1] # Last one is the same
+    next_states = np.roll(init_states, -1)  # i+1
+    next_states[-1] = init_states[-1]  # Last one is the same
 
     init_states = init_states.reshape(init_states.shape+(1,))
     next_states = next_states.reshape(next_states.shape+(1,))
@@ -88,5 +96,5 @@ def prioritized_experience_sampling_pommerman(memory, approximator_model, target
     picked_indices = random.choices(range(len(memory)-1), inversed_probability[:-1], k=batch_size)
     initial_states_result = memory_array[picked_indices]
     next_states_result = memory_array[np.array(picked_indices)+1]
-    
+
     return list(zip(initial_states_result, next_states_result))
