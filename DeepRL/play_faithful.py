@@ -10,8 +10,8 @@ import numpy as np
 import tensorflow as tf
 import psutil
 
-from utils import preprocess, collect_experience
-from model import create_model
+from utils import preprocess, collect_experience_turtle
+from model import create_model_faithful
 
 
 import linecache
@@ -28,12 +28,7 @@ env = gym.make('Assault-v0')
 
 now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 # MODEL_PATH = "file:///C:/Users/ohund/workspace/playground/DeepRL/models/20200115-213917/checkpoint"
-MODEL_PATH = "models/20200115-141757-Best-One"
-MODEL_PATH = "models/20200115-020016-Longest-Run-Crash"
-MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
-MODEL_PATH = "models/20200119-155744-Expo-Decay-Long-Run"
-MODEL_PATH = "models/20200119-094444-Expon-Run-Steadily-Increased"
-MODEL_PATH = "models/20200119-235832-Better-PER"
+MODEL_PATH = "models/20200120-053048"
 latest = tf.train.latest_checkpoint(MODEL_PATH)
 print(f"Loading model from {latest}")
 
@@ -63,7 +58,7 @@ print(f"Pixel space of the game {input_shape}")
 #     return tf.square(difference)
 
 
-approximator_model = create_model(input_shape, action_space)
+approximator_model = create_model_faithful(input_shape, action_space)
 approximator_model.load_weights(latest)
 
 # ===== INITIALISATION ======
