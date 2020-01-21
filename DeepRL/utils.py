@@ -76,7 +76,7 @@ def collect_experience_hidden_action(env, action, state_shape, time_channels_siz
             next_observation, reward, is_done, _ = env.step(-1)
         acc_reward += reward
 
-    return acc_obs, acc_reward, is_done, frame_cnt
+    return acc_obs, acc_reward, is_done, frame_cnt, _['ale.lives']
 
 
 def collect_experience_stored_actions(env, action, state_shape, time_channels_size, skip_frames):

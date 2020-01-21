@@ -82,19 +82,20 @@ minimal_exploration_rate = 0.01
 
 # ===== INITIALISATION ======
 frame_cnt = 0
-prev_lives = 5
+prev_lives = env.unwrapped.ale.lives()
 acc_nonzeros = []
 acc_actions = []
 is_done = False
 env.reset()
 
+lives = prev_lives
 for n in range(N):
-
+    is_done = True if lives < prev_lives else is_done
     if is_done:
         env.reset()
 
     action = env.action_space.sample()
-    state, acc_reward, is_done, _ = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+    state, acc_reward, is_done, frm, lives = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
 
     D.append((state, acc_reward, action))
     env.render()
@@ -135,7 +136,8 @@ for episode in range(n_episode):
             action = np.argmax(q_values)
 
         # if collect_experience.__name__ == 'collect_experience_hidden_action':
-        state, acc_reward, is_done, frames_of_collected = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+        state, acc_reward, is_done, frames_of_collected, lives = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+        is_done = True if lives < prev_lives else is_done
         frame_cnt += frames_of_collected
         episode_rewards.append(acc_reward)
 
@@ -190,7 +192,7 @@ for episode in range(n_episode):
     memory_usage = process.memory_info().rss
     tmp = random.choice(experience_batch)
     # print(tmp.shape)
-    episode_image = plot_to_image(image_grid(tmp, env.get_action_meanings()))
+    episode_image = plot_to_image(image_grid(tmp, env.unwrapped.get_action_meanings()))
 
     print(f"Current memory consumption is {memory_usage}")
     print(f"Loss of episode {episode} is {loss} and took {time_end} seconds")
