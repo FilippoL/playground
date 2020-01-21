@@ -66,7 +66,7 @@ def prioritized_experience_sampling(memory, approximator_model, target_model, ba
     inversed_probability = (1/(probality_ * N)) ** beta
     indices = random.choices(range(N), probality_, k=batch_size)
     batch = random.choices(memory, probality_, k=batch_size)
-    importance = inversed_probability[indices]
+    importance = np.array(inversed_probability[indices])
     return batch, importance
 
 
