@@ -64,7 +64,7 @@ def create_model(input_shape, action_space):
         out_q_values = tf.multiply(output, mask)
     # out_q_values = tf.reshape(out_q_values, [1,-1])
     model = models.Model(inputs=[input, mask], outputs=out_q_values)
-    model.compile(optimizer='rmsprop', loss='mean_squared_error')
+    model.compile(optimizer=tf.keras.optimizers.RMSprop(lr=0.001), loss=tf.keras.losses.Huber())
     return model
 
 
@@ -107,7 +107,7 @@ def main():
     D = deque(maxlen=LIST_SIZE)
     DISCOUNT_RATE = 0.8
     TAU = 0
-    MAX_TAU = 2000
+    MAX_TAU = 1000
     ACTION_SPACE = env.action_space.n
     TIME_CHANNELS_SIZE = 1
     INPUT_SHAPE = list(env.get_observation_space()) + [TIME_CHANNELS_SIZE]
@@ -168,8 +168,8 @@ def main():
             target_model.set_weights(approximator_model.get_weights())
             print("===> Updated weights")
 
-        # EXPLORATION_RATE = np.power(EXPLORATION_BASE, -episode) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
-        EXPLORATION_RATE = 1 - (episode * 1 / N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
+        EXPLORATION_RATE = np.power(EXPLORATION_BASE, -episode) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
+        # EXPLORATION_RATE = 1 - (episode * 1 / N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
 
         print(
             f"Running episode {episode} with exploration rate: {EXPLORATION_RATE}")
@@ -223,7 +223,8 @@ def main():
             acc_actions.append(action)
 
             episode_rewards.append(reward[0])
-            D.append([preprocess(pixels), reward[0],
+            state = preprocess(pixels)
+            D.append([state, reward[0],
                       actions_all_agents[0], TD_ERROR_DEFAULT, done])
             if (episode + 1) % 5 == 0:
                 action_str = f"Action taken: {actions_available[action]} was {'greedy' if not is_explore else 'explored'}"
@@ -267,7 +268,7 @@ def main():
         print(
             f"Number of information yielding states: {episode_nonzero_reward_states}")
 
-        is_terminal = tf.constant([0 if exp[1][3] else 1 for exp in experience_batch], dtype=next_q_values.dtype)
+        is_terminal = tf.constant([0 if exp[1][4] else 1 for exp in experience_batch], dtype=next_q_values.dtype)
         next_q = set_of_batch_rewards + \
             (DISCOUNT_RATE * tf.reduce_max(next_q_values, axis=1)) * is_terminal
         init_q_values = approximator_model.predict(
@@ -295,7 +296,7 @@ def main():
         episode_image = plot_to_image(
             image_grid_pommerman(random_experience, random_experience_next, [action for action in constants.Action]))
         image_qs = utils.plot_to_image(utils.plot_q(np.array(acc_qs), [action for action in constants.Action]))
-        image_pommerman = utils.plot_to_image(utils.show_pommerman_game(acc_frames, acc_actions))
+        image_pommerman = utils.plot_to_image(utils.show_pommerman_game(acc_frames, acc_actions, [action for action in constants.Action]))
         with file_writer_rewards.as_default():
             tf.summary.scalar('episode_rewards', np.sum(
                 episode_rewards), step=episode)
