@@ -223,7 +223,7 @@ def play(env, model, memory, episode, exploration_rate, state_shape, action_spac
             # Greedy action
 
             init_mask = tf.ones([1, action_space])
-            init_state = tf.expand_dims(state[:, :, :-1], axis=0)
+            init_state = tf.expand_dims(state[:, :, 1:], axis=0)
             q_values = model.predict([init_state, init_mask])
             action = np.argmax(q_values)
 
