@@ -11,9 +11,9 @@ import tensorflow as tf
 # from tensorflow.keras import models, layers
 import psutil
 
-from utils import collect_experience_hidden_action, preprocess, image_grid, plot_to_image
+from helper import collect_experience_hidden_action, preprocess
 from model import create_model
-
+import helper as utils
 import sampling
 
 process = psutil.Process(os.getpid())
@@ -25,6 +25,7 @@ take_sample = sampling.prioritized_experience_sampling
 # take_sample = sampling.random_sampling
 
 # env = gym.make('BreakoutDeterministic-v4')
+frame_skip = 1
 env = gym.make('Assault-v0')
 
 now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -71,7 +72,7 @@ batch_size = 250
 N = batch_size
 n_episode = 2000
 q_mask_shape = (batch_size, action_space)
-
+save_freq = 50
 print(f"Pixel space of the game {input_shape}")
 
 approximator_model = create_model(input_shape, action_space)
@@ -84,21 +85,18 @@ minimal_exploration_rate = 0.01
 # ===== INITIALISATION ======
 frame_cnt = 0
 prev_lives = env.unwrapped.ale.lives()
-acc_nonzeros = []
-acc_actions = []
 is_done = False
 env.reset()
 
 lives = prev_lives
 for n in range(N):
-    is_done = True if lives < prev_lives else is_done
     if is_done:
         env.reset()
 
     action = env.action_space.sample()
     state, acc_reward, is_done, frm, lives = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
-
-    D.append((state, acc_reward, action))
+    is_done = True if lives < prev_lives else is_done
+    D.append((state, acc_reward, action, is_done))
     env.render()
 
 for episode in range(n_episode):
@@ -112,25 +110,29 @@ for episode in range(n_episode):
     # exploration_rate = 1-(episode*1/n_episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
 
     print(f"Running episode {episode} with exploration rate: {exploration_rate}")
-    # print(is_done)
     initial_observation = env.reset()
     first_preprocess = preprocess(initial_observation)
     state = np.repeat(first_preprocess, time_channels_size+1).reshape(state_shape)
     is_done = False
 
-    # next_state = initial_state.copy()  # To remove all the information of the last episode
+    # Initialize stats
+    stats_actions = []
+    stats_qs = []
+    stats_rewards = 0
+    stats_frame_cnt = 0
+    stats_frames = []
 
-    episode_rewards = []
-    frame_cnt = 0
     while not is_done:
         # https://danieltakeshi.github.io/2016/11/25/frame-skipping-and-preprocessing-for-deep-q-networks-on-atari-2600-games/
-        frame_cnt += 1
+        stats_frame_cnt += 1
         tau += 1
         do_explore = random.choices((True, False), (exploration_rate, 1 - exploration_rate))[0]
         if do_explore:
+            q_values = np.zeros([1, action_space])
             action = env.action_space.sample()
         else:
             # Greedy action
+
             init_mask = tf.ones([1, action_space])
             init_state = state[:, :, :-1]
             q_values = approximator_model.predict([tf.reshape(init_state, [1] + input_shape), init_mask])
@@ -139,19 +141,14 @@ for episode in range(n_episode):
         # if collect_experience.__name__ == 'collect_experience_hidden_action':
         state, acc_reward, is_done, frames_of_collected, lives = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
         is_done = True if lives < prev_lives else is_done
-        frame_cnt += frames_of_collected
-        episode_rewards.append(acc_reward)
+        stats_frame_cnt += frames_of_collected
+        stats_rewards += acc_reward
+        stats_actions.append(action)
+        stats_qs.append(q_values)
+        stats_frames.append(state[:, :, -1])
 
-        # if collect_experience.__name__ == 'collect_experience_stored_actions':
-        #     state, acc_reward, is_done, frames_of_collected, all_collected_actions = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
-        #     frame_cnt += frames_of_collected
-        #     episode_rewards.append(acc_reward)
-
-        acc_actions.append(action)
-        D.append((state, acc_reward, action))
+        D.append((state, acc_reward, action, is_done))
         if (episode % 5) == 0:
-            with file_writer_rewards.as_default():
-                tf.summary.histogram('action_taken', acc_actions, step=episode)
             print(f"Reward {acc_reward} with action {action_meanings[action]} which was {'explored' if do_explore else 'greedy'}")
             env.render()
 
@@ -181,45 +178,28 @@ for episode in range(n_episode):
 
     # Gather rewards for each batch item
     set_of_batch_rewards = tf.constant([exp[1] for exp in experience_batch], dtype=next_q_values.dtype)
-    episode_nonzero_reward_states = (tf.math.count_nonzero(set_of_batch_rewards)/batch_size)*100
-    print(f"Number of information yielding states: {episode_nonzero_reward_states}")
 
     next_q = set_of_batch_rewards + (discount_rate * tf.reduce_max(next_q_values, axis=1))
     history = approximator_model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback], sample_weight=importance)
 
     # Wrap up
-    loss = history.history.get("loss", [0])[0]
-    time_end = np.round(time.time() - start_time, 2)
-    memory_usage = process.memory_info().rss
-    tmp = random.choice(experience_batch)
-    # print(tmp.shape)
-    episode_image = plot_to_image(image_grid(tmp, action_meanings))
+    stats_nonzeros = (tf.math.count_nonzero(set_of_batch_rewards)/batch_size)*100
+    stats_loss = history.history.get("loss", [0])[0]
+    stats_time_end = np.round(time.time() - start_time, 2)
+    stats_memory_usage = np.round(process.memory_info().rss/(1024**3), 2)
+    sample_exp = random.choice(experience_batch)
 
-    print(f"Current memory consumption is {memory_usage}")
-    print(f"Loss of episode {episode} is {loss} and took {time_end} seconds")
-    print(f"TOTAL REWARD: {np.sum(episode_rewards)}")
-    with file_writer_rewards.as_default():
-        tf.summary.scalar('episode_rewards', np.sum(episode_rewards), step=episode)
-        tf.summary.scalar('episode_loss', loss, step=episode)
-        tf.summary.scalar('episode_time_in_secs', time_end, step=episode)
-        tf.summary.scalar('episode_nr_frames', frame_cnt, step=episode)
-        tf.summary.scalar('episode_exploration_rate', exploration_rate, step=episode)
-        tf.summary.scalar('episode_mem_usage', memory_usage, step=episode)
-        tf.summary.scalar('episode_mem_usage_in_GB', np.round(memory_usage/1024/1024/1024), step=episode)
-        tf.summary.scalar('episode_frames_per_sec', np.round(frame_cnt/time_end, 2), step=episode)
-        # print(np.shape(experience_batch[0][0][:, :, 0]))
-        tf.summary.image('episode_example_state', episode_image, step=episode)
-        tf.summary.histogram('q-values', next_q_values, step=episode)
-        if (episode+1) % 5 == 0:
-            acc_nonzeros.append(episode_nonzero_reward_states)
-            tf.summary.histogram('episode_nonzero_reward_states', acc_nonzeros, step=(episode+1)//5)
-        else:
-            acc_nonzeros.append(episode_nonzero_reward_states)
-    if (episode+1) % 50 == 0:
-        model_target_dir = checkpoint_path.format(epoch=episode)
-        approximator_model.save_weights(model_target_dir)
-        print(f"Model was saved under {model_target_dir}")
+    print(f"Current memory consumption is {stats_memory_usage} GB's")
+    print(f"Number of information yielding states: {stats_nonzeros}")
+    print(f"Loss of episode {episode} is {stats_loss} and took {stats_time_end} seconds with {stats_frame_cnt}")
+    print(f"TOTAL REWARD: {stats_rewards}")
 
+    utils.write_stats(file_writer_rewards, episode, sample_exp, frame_skip, exploration_rate, action_meanings,
+                      stats_loss, stats_time_end, np.vstack(stats_qs),
+                      stats_rewards, stats_frame_cnt, stats_nonzeros,
+                      stats_memory_usage, stats_actions, stats_frames)
+
+    utils.save_model(approximator_model, episode, checkpoint_path, save_freq)
 
 # TODO: [x] Simplify the loss function
 # TODO: [x] Apply the reward

@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 import psutil
 
-from utils import preprocess, collect_experience_turtle, collect_experience_hidden_action
+from helper import preprocess, collect_experience_turtle, collect_experience_hidden_action
 from model import create_model
 
 collect_experience = collect_experience_hidden_action
@@ -27,6 +27,7 @@ MODEL_PATH = "models/20200115-020016-Longest-Run-Crash"
 MODEL_PATH = "models/20200116-155707"
 MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
 MODEL_PATH = "models/20200121-203120-Premature-Death"
+MODEL_PATH = "models/20200121-234033-PER"
 
 latest = tf.train.latest_checkpoint(MODEL_PATH)
 print(f"Loading model from {latest}")
