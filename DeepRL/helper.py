@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import io
 import os
 import sys
+import random
 import tensorflow as tf
 
 
@@ -175,6 +176,93 @@ def downsample(img):
 
 def preprocess(img):
     return standardize(to_grayscale(downsample(img)))
+
+
+def initialize_memory(env, memory, N, time_channels_size, state_shape, skip_frames):
+
+    init_lives = env.unwrapped.ale.lives()
+    is_done = False
+    for n in range(N):
+        if is_done:
+            env.reset()
+
+        action = env.action_space.sample()
+        state, acc_reward, is_done, frm, lives = collect_experience_hidden_action(env, action, state_shape, time_channels_size, skip_frames)
+        is_done = True if lives < init_lives else is_done
+        memory.append((state, acc_reward, action, is_done))
+        env.render()
+
+    return env, memory
+
+
+def play(env, model, memory, episode, exploration_rate, state_shape, action_space, time_channels_size, skip_frames):
+    # Initialize stats
+    print(f"Running episode {episode} with exploration rate: {exploration_rate}")
+    initial_observation = env.reset()
+    first_preprocess = preprocess(initial_observation)
+    state = np.repeat(first_preprocess, time_channels_size+1).reshape(state_shape)
+    is_done = False
+    init_lives = env.unwrapped.ale.lives()
+    action_meanings = env.unwrapped.get_action_meanings()
+    stats_actions = []
+    stats_qs = []
+    stats_rewards = 0
+    stats_frame_cnt = 0
+    stats_frames = []
+    tau = 0
+
+    while not is_done:
+        # https://danieltakeshi.github.io/2016/11/25/frame-skipping-and-preprocessing-for-deep-q-networks-on-atari-2600-games/
+        stats_frame_cnt += 1
+        tau += 1
+        do_explore = random.choices((True, False), (exploration_rate, 1 - exploration_rate))[0]
+        if do_explore:
+            q_values = np.zeros([1, action_space])
+            action = env.action_space.sample()
+        else:
+            # Greedy action
+
+            init_mask = tf.ones([1, action_space])
+            init_state = tf.expand_dims(state[:, :, :-1], axis=0)
+            q_values = model.predict([init_state, init_mask])
+            action = np.argmax(q_values)
+
+        # if collect_experience.__name__ == 'collect_experience_hidden_action':
+        state, acc_reward, is_done, frames_of_collected, lives = collect_experience_hidden_action(env, action, state_shape, time_channels_size, skip_frames)
+        is_done = True if lives < init_lives else is_done
+        stats_frame_cnt += frames_of_collected
+        stats_rewards += acc_reward
+        stats_actions.append(action)
+        stats_qs.append(q_values)
+        stats_frames.append(state[:, :, -1])
+
+        memory.append((state, acc_reward, action, is_done))
+        if (episode % 5) == 0:
+            print(f"Reward {acc_reward} with action {action_meanings[action]} which was {'explored' if do_explore else 'greedy'}")
+            env.render()
+    return stats_frame_cnt, stats_rewards, stats_actions, stats_qs, stats_frames
+
+
+def train(approximator_model, target_model, experience_batch, importance, batch_size, action_space, discount_rate, tensorflow_callback):
+    # Gather initial and next state from memory for each batch item
+    set_of_batch_initial_states = tf.constant([exp[0][:, :, :-1] for exp in experience_batch])
+    # set_of_batch_initial_states = tf.reshape(set_of_batch_initial_states, [-1] + input_shape)
+    set_of_batch_next_states = tf.constant([exp[0][:, :, 1:] for exp in experience_batch])
+    # set_of_batch_next_states = tf.reshape(set_of_batch_next_states, [-1] + input_shape)
+
+    # Gather actions for each batch item
+    set_of_batch_actions = tf.one_hot([exp[2] for exp in experience_batch], action_space)
+
+    next_q_mask = tf.ones([batch_size, action_space])  # Maybe unnecessary - We are using the double q mask instead.
+    double_q_mask = tf.one_hot(tf.argmax(approximator_model.predict([set_of_batch_next_states, next_q_mask]), axis=1), action_space)  # http://arxiv.org/abs/1509.06461
+    next_q_values = tf.constant(target_model.predict([set_of_batch_next_states, double_q_mask]))
+
+    # Gather rewards for each batch item
+    set_of_batch_rewards = tf.constant([exp[1] for exp in experience_batch], dtype=next_q_values.dtype)
+
+    next_q = set_of_batch_rewards + (discount_rate * tf.reduce_max(next_q_values, axis=1))
+    history = approximator_model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback], sample_weight=importance)
+    return history
 
 
 def write_stats(file_writer_rewards, episode, sample_exp, frame_skip, exploration_rate, action_meanings,
