@@ -326,3 +326,15 @@ def plot_q(acc_qs, meanings):
     plt.plot(acc_qs)
     plt.legend(meanings)
     return figure
+
+
+def exploration_periodic_decay(episode, episodes_per_cycle=10, minimal_exploration_rate=0.1):
+    return max(minimal_exploration_rate, np.cos(episode/episodes_per_cycle*(np.pi-(np.pi*0.5))))
+
+
+def exploration_exponential_decay(episode, exploration_base=1.01, minimal_exploration_rate=0.1):
+    return max(minimal_exploration_rate, np.power(exploration_base, -episode))
+
+
+def exploration_linear_decay(episode, n_episodes=1000, minimal_exploration_rate=0.1):
+    return max(minimal_exploration_rate, 1-(episode*1/n_episodes))

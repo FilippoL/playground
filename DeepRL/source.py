@@ -12,7 +12,7 @@ import tensorflow as tf
 import psutil
 
 from helper import collect_experience_hidden_action, preprocess
-from model import create_model
+from model import create_model, create_model_faithful
 import helper as utils
 import sampling
 
@@ -56,7 +56,7 @@ file_writer_qs = tf.summary.create_file_writer(log_dir + "/metrics")
 # file_writer.set_as_default()
 
 # D = list()
-list_size = 60000
+list_size = 10000
 D = deque(maxlen=list_size)
 # D = RingBuf(list_size)
 discount_rate = 0.99
@@ -99,12 +99,12 @@ for episode in range(n_episode):
         target_model.set_weights(approximator_model.get_weights())
         print("===> Updated weights")
 
-    exploration_rate = np.power(exploration_base, -episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
-    # exploration_rate = 1-(episode*1/n_episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
+    # exploration_rate = np.power(exploration_base, -episode) if exploration_rate > minimal_exploration_rate else minimal_exploration_rate
+    exploration_rate = utils.exploration_linear_decay(episode, 500)
 
     stats_frame_cnt, stats_rewards, stats_actions, stats_qs, stats_frames = utils.play(
         env, approximator_model, D, episode, exploration_rate, state_shape, action_space, time_channels_size, skip_frames)
-
+    tau += stats_frame_cnt
     print(f"Number of frames in memory {len(D)}")
     if take_sample.__name__ == 'prioritized_experience_sampling':
         print("Uses Prioritised Experience Replay Sampling")

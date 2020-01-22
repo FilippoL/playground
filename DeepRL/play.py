@@ -11,7 +11,7 @@ import tensorflow as tf
 import psutil
 
 from helper import preprocess, collect_experience_turtle, collect_experience_hidden_action
-from model import create_model
+from model import create_model, create_model_faithful
 
 collect_experience = collect_experience_hidden_action
 
@@ -28,7 +28,7 @@ MODEL_PATH = "models/20200116-155707"
 MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
 MODEL_PATH = "models/20200121-203120-Premature-Death"
 MODEL_PATH = "models/20200121-234033-PER"
-MODEL_PATH = "models/20200122-025928"
+MODEL_PATH = "models/20200122-042654-Full-Run-Breakout"
 
 latest = tf.train.latest_checkpoint(MODEL_PATH)
 print(f"Loading model from {latest}")
