@@ -19,8 +19,8 @@ import sampling
 process = psutil.Process(os.getpid())
 
 
-collect_experience = collect_experience_hidden_action
-take_sample = sampling.prioritized_experience_sampling
+collect_experience = collect_experience_hidden_action_faithful
+take_sample = sampling.prioritized_experience_sampling_3
 # take_sample = sampling.uniform_sampling
 # take_sample = sampling.random_sampling
 
@@ -70,23 +70,27 @@ input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [time_chann
 state_shape = list(np.zeros(input_shape).shape)[:2] + [time_channels_size+1]
 batch_size = 250
 N = batch_size
-n_episode = 2000
+n_episode = 1000
 q_mask_shape = (batch_size, action_space)
 save_freq = 50
 print(f"Pixel space of the game {input_shape}")
 
-approximator_model = create_model(input_shape, action_space)
-target_model = create_model(input_shape, action_space)
+approximator_model = create_model_faithful(input_shape, action_space)
+target_model = create_model_faithful(input_shape, action_space)
 
 exploration_base = 1.02
 exploration_rate = 1
-minimal_exploration_rate = 0.01
+episodes_per_cycle = 50
+minimal_exploration_rate = 0.001
 
 # ===== INITIALISATION ======
 frame_cnt = 0
 prev_lives = env.unwrapped.ale.lives()
 is_done = False
 env.reset()
+td_err_default = 0
+acc_nonzeros = []
+acc_actions = []
 
 utils.initialize_memory(env, D, N, time_channels_size, state_shape, skip_frames)
 
@@ -94,6 +98,9 @@ for episode in range(n_episode):
     print(" =================== "*3)
 
     start_time = time.time()
+
+    acc_actions = []
+
     if tau >= max_tau:
         tau = 0
         target_model.set_weights(approximator_model.get_weights())

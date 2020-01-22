@@ -100,7 +100,7 @@ class Pomme(gym.Env):
         # print(np.array((constants.TILE_SIZE * constants.BOARD_SIZE),
         #                (constants.TILE_SIZE * constants.BOARD_SIZE)))
         # return np.array((constants.TILE_SIZE * constants.BOARD_SIZE), (constants.TILE_SIZE * constants.BOARD_SIZE))
-        return [220, 220]
+        return [160, 160]
 
     def set_agents(self, agents):
         self._agents = agents

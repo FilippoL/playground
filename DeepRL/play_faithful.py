@@ -10,25 +10,25 @@ import numpy as np
 import tensorflow as tf
 import psutil
 
-from helper import preprocess, collect_experience_turtle, collect_experience_hidden_action
-from model import create_model, create_model_faithful
+from utils import preprocess, collect_experience_turtle
+from model import create_model_faithful
 
-collect_experience = collect_experience_hidden_action
+
+import linecache
+import os
+import tracemalloc
+
+
+collect_experience = collect_experience_turtle
 
 process = psutil.Process(os.getpid())
 
 # env = gym.make('BreakoutDeterministic-v4')
-env = gym.make('Assault-v4')
+env = gym.make('Assault-v0')
 
 now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 # MODEL_PATH = "file:///C:/Users/ohund/workspace/playground/DeepRL/models/20200115-213917/checkpoint"
-MODEL_PATH = "models/20200115-141757-Best-One"
-MODEL_PATH = "models/20200115-020016-Longest-Run-Crash"
-MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
-MODEL_PATH = "models/20200121-203120-Premature-Death"
-MODEL_PATH = "models/20200121-234033-PER"
-MODEL_PATH = "models/20200122-042654-Full-Run-Breakout"
-
+MODEL_PATH = "models/20200120-053048"
 latest = tf.train.latest_checkpoint(MODEL_PATH)
 print(f"Loading model from {latest}")
 
@@ -58,7 +58,7 @@ print(f"Pixel space of the game {input_shape}")
 #     return tf.square(difference)
 
 
-approximator_model = create_model(input_shape, action_space)
+approximator_model = create_model_faithful(input_shape, action_space)
 approximator_model.load_weights(latest)
 
 # ===== INITIALISATION ======
@@ -91,7 +91,7 @@ for episode in range(15):
         # action = env.action_space.sample()
         print(f"Executing action: {action_meanings[action]}")
 
-        state, acc_reward, is_done, frames_of_collected, _ = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
+        state, acc_reward, is_done, frames_of_collected = collect_experience(env, action, state_shape, time_channels_size, skip_frames)
         state[:, :, :-1] = state[:, :, 1:]
         frame_cnt += frames_of_collected
         episode_rewards.append(acc_reward)

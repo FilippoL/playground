@@ -7,7 +7,6 @@ from . import constants
 from . import characters
 from . import utility
 
-
 class ForwardModel(object):
     """Class for helping with the [forward] modeling of the game state."""
 
@@ -443,6 +442,12 @@ class ForwardModel(object):
             next_bombs = []
             has_new_explosions = False
             for bomb in curr_bombs:
+
+                # Check whether it's our bomb
+                our_bomb = False
+                if bomb.bomber.agent_id == 0:
+                    our_bomb = True
+
                 if not bomb.exploded():
                     next_bombs.append(bomb)
                     continue
@@ -456,8 +461,12 @@ class ForwardModel(object):
                         if curr_board[r][c] == constants.Item.Rigid.value:
                             break
                         exploded_map[r][c] = 1
+                        # Check if exploded map overlaps with wood, check the bomb id and assign reward to the bomber accordingly
                         if curr_board[r][c] == constants.Item.Wood.value:
+                            if (exploded_map[r][c] == 1) and our_bomb:
+                                constants.wood_destroyed_reward += 0.01
                             break
+                
 
             curr_bombs = next_bombs
             for bomb in curr_bombs:
@@ -644,7 +653,15 @@ class ForwardModel(object):
                 return [-1] * 4
             else:
                 # Game running: 0 for alive, -1 for dead.
-                return [int(agent.is_alive) - 1 for agent in agents]
+                if agents[0].is_alive:
+                    reward_val = 0
+                    reward_val += constants.wood_destroyed_reward
+                    constants.wood_destroyed_reward = 0
+                    return [reward_val, 0, 0, 0]
+                else: 
+                    return [-1, 0, 0, 0]
+
+                # return [int(agent.is_alive) - 1 for agent in agents]
         elif game_type == constants.GameType.OneVsOne:
             if len(alive_agents) == 1:
                 # An agent won. Give them +1, the other -1.
@@ -653,8 +670,15 @@ class ForwardModel(object):
                 # Game is over from time. Everyone gets -1.
                 return [-1] * 2
             else:
-                # Game running
-                return [0, 0]
+                # Game running: 0 for alive, -1 for dead.
+                if agents[0].is_alive:
+                    reward_val = 0
+                    reward_val += constants.wood_destroyed_reward
+                    constants.wood_destroyed_reward = 0
+                    return [reward_val, 0]
+                else: 
+                    return [-1, 0]
+
         else:
             # We are playing a team game.
             if any_lst_equal(alive_agents, [[0, 2], [0], [2]]):

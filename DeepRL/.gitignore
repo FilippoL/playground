@@ -4,6 +4,7 @@
 old_logs/*
 logs/*
 models/*
+old_logs/*
 
 ### Python ###
 # Byte-compiled / optimized / DLL files

@@ -3,6 +3,7 @@ import numpy as np
 import random
 from collections import deque
 import tensorflow as tf
+import multiprocessing
 
 
 def random_sampling(memory, K):
@@ -70,6 +71,38 @@ def prioritized_experience_sampling(memory, approximator_model, target_model, ba
     return batch, importance
 
 
+def prioritized_experience_sampling_3(memory, batch_size, beta=0.4, a=0.6, e=0.01):
+
+    N = len(memory)
+
+    error_ = np.abs([exp[3] for exp in memory]) 
+    for exp, err in zip(memory, error_):
+        exp[3] = err
+
+    error_ = error_ + e
+    probality_ = error_ ** a / (np.sum(error_) ** a)
+
+    inversed_probability = (1/(probality_ * N)) ** beta
+
+    indices = random.choices(range(N), inversed_probability, k=batch_size)
+    return indices
+
+# def prioritized_experience_sampling_pommerman(memory, approximator_model, target_model, batch_size, action_space, beta=0.4, a=0.6, e=0.01):
+
+#     N = len(memory)
+
+#     error_ = np.abs(q_target - q_values) + e
+#     probality_ = np.max(error_ ** a / (np.sum(error_) ** a), axis=1)
+
+#     inversed_probability = (1/(probality_ * N)) ** beta
+
+#     picked_indices = random.choices(range(len(memory)-1), inversed_probability[:-1], k=batch_size)
+#     initial_states_result = memory_array[picked_indices]
+#     next_states_result = memory_array[np.array(picked_indices)+1]
+
+#     return list(zip(initial_states_result, next_states_result))
+
+
 def prioritized_experience_sampling_pommerman(memory, approximator_model, target_model, batch_size, action_space, beta=0.4, a=0.6, e=0.01):
 
     N = len(memory)
@@ -93,7 +126,7 @@ def prioritized_experience_sampling_pommerman(memory, approximator_model, target
 
     inversed_probability = (1/(probality_ * N)) ** beta
 
-    picked_indices = random.choices(range(len(memory)-1), inversed_probability[:-1], k=batch_size)
+    picked_indices = random.choices(range(len(memory)-1), probality_[:-1], k=batch_size)
     initial_states_result = memory_array[picked_indices]
     next_states_result = memory_array[np.array(picked_indices)+1]
 
