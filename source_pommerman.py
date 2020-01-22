@@ -9,7 +9,7 @@ import numpy as np
 import psutil
 import tensorflow as tf
 from tensorflow.keras import models, layers
-
+import matplotlib.pyplot as plt
 import pommerman
 from DeepRL.sampling import prioritized_experience_sampling_3
 from DeepRL.helper import plot_to_image, image_grid_pommerman
@@ -152,7 +152,7 @@ def main():
                 actions_all_agents)
 
             D.append([preprocess(pixels), reward[0],
-                      actions_all_agents[0], TD_ERROR_DEFAULT])
+                      actions_all_agents[0], TD_ERROR_DEFAULT, done])
         print('Init episode {} finished'.format(n))
 
     for episode in range(N_EPISODES):
@@ -187,7 +187,7 @@ def main():
         frame_cnt = 0
         acc_qs = []
         acc_actions = []
-        # acc_actions = []
+        acc_frames = []
         action_str = ""
 
         while not done:
@@ -197,7 +197,7 @@ def main():
 
             actions_all_agents = env.act(state_obs)
             action = actions_all_agents[0]
-
+            q_values = np.zeros((1, ACTION_SPACE))
             if not random.choices((True, False), (EXPLORATION_RATE, 1 - EXPLORATION_RATE))[0]:
                 # Greedy action
                 init_mask = tf.ones([1, ACTION_SPACE])
@@ -205,14 +205,15 @@ def main():
                 q_values = approximator_model.predict(
                     [tf.reshape(init_state, [1] + INPUT_SHAPE), init_mask])
                 action = np.argmax(q_values)
-                acc_qs.append(q_values)
                 actions_all_agents[0] = action
 
+            acc_qs.append(q_values[0])
             # print(
             #     action_str) if action_str != f"Action taken: {actions_available[action]}" else None
 
             state_obs, reward, done, info, pixels = env.step2(
                 actions_all_agents)
+            acc_frames.append(pixels.T)
 
             acc_actions.append(action)
             if done:
@@ -222,7 +223,7 @@ def main():
 
             episode_rewards.append(reward[0])
             D.append([preprocess(pixels), reward[0],
-                      actions_all_agents[0], TD_ERROR_DEFAULT])
+                      actions_all_agents[0], TD_ERROR_DEFAULT, done])
             action_str = f"Action taken: {actions_available[action]}"
 
         memory_length = len(D)
@@ -262,24 +263,16 @@ def main():
         print(
             f"Number of information yielding states: {episode_nonzero_reward_states}")
 
+        is_terminal = tf.constant([0 if exp[1][3] else 1 for exp in experience_batch], dtype=next_q_values.dtype)
         next_q = set_of_batch_rewards + \
-            (DISCOUNT_RATE * tf.reduce_max(next_q_values, axis=1))
+            (DISCOUNT_RATE * tf.reduce_max(next_q_values, axis=1)) * is_terminal
         init_q_values = approximator_model.predict(
             [set_of_batch_states, set_of_batch_actions])
-        init_q = tf.reduce_max(init_q_values, axis=1)
+        init_q = tf.reduce_sum(init_q_values, axis=1)
         td_error = (next_q - init_q).numpy()
-        # print("------"*15)
-        # tf.print(next_q)
-        # tf.print(tf.reduce_max(tmp_init_q_values, axis=1))
-        # tf.print(
-        #     tf.square(next_q-tf.reduce_max(tmp_init_q_values, axis=1)))
-        # somethingLoss = tf.square(
-        #     next_q-tf.reduce_max(tmp_init_q_values, axis=1))
-        # tf.print(tf.reduce_sum(somethingLoss)/BATCH_SIZE)
-        # print("------"*15)
 
         history = approximator_model.fit(
-            [set_of_batch_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback], sample_weights=importance)
+            [set_of_batch_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback], sample_weight=importance)
 
         for idx, exp in enumerate(experience_batch):
             exp[0][3] = td_error[idx]
@@ -297,7 +290,8 @@ def main():
         # print(tmp.shape)
         episode_image = plot_to_image(
             image_grid_pommerman(random_experience, random_experience_next, [action for action in constants.Action]))
-        image_qs = utils.plot_to_image(utils.plot_q(acc_qs, [action for action in constants.Action]))
+        image_qs = utils.plot_to_image(utils.plot_q(np.array(acc_qs), [action for action in constants.Action]))
+        image_pommerman = utils.plot_to_image(utils.image_grid_for_all_frames(acc_frames, 1))
         with file_writer_rewards.as_default():
             tf.summary.scalar('episode_rewards', np.sum(
                 episode_rewards), step=episode)
@@ -311,6 +305,7 @@ def main():
                 frame_cnt / time_end, 2), step=episode)
             tf.summary.histogram('q-values', next_q_values, step=episode)
             tf.summary.image('q-values-over-time', image_qs, step=episode)
+            tf.summary.image('pommerman-game', image_pommerman, step=episode)
 
             tf.summary.scalar('episode_mem_usage_in_GB', np.round(
                 memory_usage / 1024 / 1024 / 1024), step=episode)
