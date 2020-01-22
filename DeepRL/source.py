@@ -25,8 +25,8 @@ take_sample = sampling.prioritized_experience_sampling
 # take_sample = sampling.random_sampling
 
 # env = gym.make('BreakoutDeterministic-v4')
-frame_skip = 1
-env = gym.make('Assault-v0')
+frame_skip = 4
+env = gym.make('Assault-v4', frameskip=frame_skip)
 
 now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -56,7 +56,7 @@ file_writer_qs = tf.summary.create_file_writer(log_dir + "/metrics")
 # file_writer.set_as_default()
 
 # D = list()
-list_size = 6000
+list_size = 60000
 D = deque(maxlen=list_size)
 # D = RingBuf(list_size)
 discount_rate = 0.99
@@ -64,8 +64,8 @@ tau = 0
 max_tau = 2000
 action_space = env.action_space.n
 action_meanings = env.unwrapped.get_action_meanings()
-time_channels_size = 2
-skip_frames = 2
+time_channels_size = 4
+skip_frames = 1
 input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [time_channels_size]
 state_shape = list(np.zeros(input_shape).shape)[:2] + [time_channels_size+1]
 batch_size = 250
@@ -129,7 +129,7 @@ for episode in range(n_episode):
     print(f"Loss of episode {episode} is {stats_loss} and took {stats_time_end} seconds with {stats_frame_cnt}")
     print(f"TOTAL REWARD: {stats_rewards}")
 
-    utils.write_stats(file_writer_rewards, episode, sample_exp, frame_skip, exploration_rate, action_meanings,
+    utils.write_stats(file_writer_rewards, episode, sample_exp, skip_frames, exploration_rate, action_meanings,
                       stats_loss, stats_time_end, np.vstack(stats_qs),
                       stats_rewards, stats_frame_cnt, stats_nonzeros,
                       stats_memory_usage, stats_actions, stats_frames)

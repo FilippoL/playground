@@ -18,7 +18,7 @@ collect_experience = collect_experience_hidden_action
 process = psutil.Process(os.getpid())
 
 # env = gym.make('BreakoutDeterministic-v4')
-env = gym.make('Assault-v0')
+env = gym.make('Assault-v4')
 
 now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 # MODEL_PATH = "file:///C:/Users/ohund/workspace/playground/DeepRL/models/20200115-213917/checkpoint"
@@ -28,6 +28,7 @@ MODEL_PATH = "models/20200116-155707"
 MODEL_PATH = "models/20200117-010713-Increasing-Run-Crash"
 MODEL_PATH = "models/20200121-203120-Premature-Death"
 MODEL_PATH = "models/20200121-234033-PER"
+MODEL_PATH = "models/20200122-025928"
 
 latest = tf.train.latest_checkpoint(MODEL_PATH)
 print(f"Loading model from {latest}")
@@ -38,8 +39,8 @@ print(f"Loading model from {latest}")
 action_meanings = env.unwrapped.get_action_meanings()
 discount_rate = 0.8
 action_space = env.action_space.n
-time_channels_size = 2
-skip_frames = 2
+time_channels_size = 4
+skip_frames = 1
 input_shape = list(np.array(env.observation_space.shape) // 2)[:2] + [time_channels_size]
 state_shape = list(np.zeros(input_shape).shape)[:2] + [time_channels_size+1]
 batch_size = 200
