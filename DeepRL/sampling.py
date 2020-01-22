@@ -83,9 +83,10 @@ def prioritized_experience_sampling_3(memory, batch_size, beta=0.4, a=0.6, e=0.0
     probality_ = error_ ** a / (np.sum(error_) ** a)
 
     inversed_probability = (1/(probality_ * N)) ** beta
-
     indices = random.choices(range(N), probality_, k=batch_size)
-    return indices, inversed_probability[indices]
+    importance = inversed_probability[indices]
+    max_td_error = max(error_)
+    return indices, importance, max_td_error
 
 # def prioritized_experience_sampling_pommerman(memory, approximator_model, target_model, batch_size, action_space, beta=0.4, a=0.6, e=0.01):
 

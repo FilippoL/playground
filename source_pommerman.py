@@ -111,13 +111,14 @@ def main():
     ACTION_SPACE = env.action_space.n
     TIME_CHANNELS_SIZE = 1
     INPUT_SHAPE = list(env.get_observation_space()) + [TIME_CHANNELS_SIZE]
-    BATCH_SIZE = 4
+    BATCH_SIZE = 32
     N = BATCH_SIZE
     N_EPISODES = 1000
     EXPLORATION_BASE = 1.02
     EXPLORATION_RATE = 1
     MINIMAL_EXPLORATION_RATE = 0.01
     TD_ERROR_DEFAULT = 0
+    FRAME_COUNT = 0
     print(f"Pixel space of the game {INPUT_SHAPE}")
 
     # ================== CONTINUE TRAIN FROM LOADED MODEL ==================== #
@@ -144,15 +145,18 @@ def main():
 
     print("Running the init")
     for n in range(N):
+        if FRAME_COUNT > BATCH_SIZE:
+            break
         state_obs = env.reset()
         done = False
         while not done:
+            FRAME_COUNT += 1
             actions_all_agents = env.act(state_obs)
             state_obs, reward, done, info, pixels = env.step2(
                 actions_all_agents)
 
             D.append([preprocess(pixels), reward[0],
-                      actions_all_agents[0], TD_ERROR_DEFAULT, done])
+                      actions_all_agents[0], reward[0], done])
         print('Init episode {} finished'.format(n))
 
     for episode in range(N_EPISODES):
@@ -165,8 +169,7 @@ def main():
             print("===> Updated weights")
 
         # EXPLORATION_RATE = np.power(EXPLORATION_BASE, -episode) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
-        EXPLORATION_RATE = 1 - (
-            episode * 1 / N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
+        EXPLORATION_RATE = 1 - (episode * 1 / N_EPISODES) if EXPLORATION_RATE > MINIMAL_EXPLORATION_RATE else MINIMAL_EXPLORATION_RATE
 
         print(
             f"Running episode {episode} with exploration rate: {EXPLORATION_RATE}")
@@ -198,7 +201,8 @@ def main():
             actions_all_agents = env.act(state_obs)
             action = actions_all_agents[0]
             q_values = np.zeros((1, ACTION_SPACE))
-            if not random.choices((True, False), (EXPLORATION_RATE, 1 - EXPLORATION_RATE))[0]:
+            is_explore = random.choices((True, False), (EXPLORATION_RATE, 1 - EXPLORATION_RATE))[0]
+            if not is_explore:
                 # Greedy action
                 init_mask = tf.ones([1, ACTION_SPACE])
                 init_state = state
@@ -213,23 +217,23 @@ def main():
 
             state_obs, reward, done, info, pixels = env.step2(
                 actions_all_agents)
-            acc_frames.append(pixels.T)
 
+            flipped = np.flip(pixels, (0))
+            acc_frames.append(flipped)
             acc_actions.append(action)
-            if done:
-                with file_writer_rewards.as_default():
-                    tf.summary.histogram(
-                        'action_taken', acc_actions, step=episode)
 
             episode_rewards.append(reward[0])
             D.append([preprocess(pixels), reward[0],
                       actions_all_agents[0], TD_ERROR_DEFAULT, done])
-            action_str = f"Action taken: {actions_available[action]}"
+            if (episode + 1) % 5 == 0:
+                action_str = f"Action taken: {actions_available[action]} was {'greedy' if not is_explore else 'explored'}"
+                print(action_str)
 
         memory_length = len(D)
         print(f"Number of frames in memory {memory_length}")
         # experience_batch = take_sample(D, approximator_model, target_model, BATCH_SIZE, ACTION_SPACE)
-        ids, importance = take_sample(D, BATCH_SIZE)
+        ids, importance, max_td_err = take_sample(D, BATCH_SIZE, beta=1-(episode/N_EPISODES))
+        TD_ERROR_DEFAULT = max_td_err
         experience_batch = [(D[idx], D[idx + 1]) if idx <
                             memory_length - 1 else (D[idx - 1], D[idx]) for idx in ids]
 
@@ -272,7 +276,7 @@ def main():
         td_error = (next_q - init_q).numpy()
 
         history = approximator_model.fit(
-            [set_of_batch_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback], sample_weight=importance)
+            [set_of_batch_states, set_of_batch_actions], next_q, batch_size=BATCH_SIZE, verbose=1, callbacks=[tensorflow_callback], sample_weight=importance)
 
         for idx, exp in enumerate(experience_batch):
             exp[0][3] = td_error[idx]
@@ -291,7 +295,7 @@ def main():
         episode_image = plot_to_image(
             image_grid_pommerman(random_experience, random_experience_next, [action for action in constants.Action]))
         image_qs = utils.plot_to_image(utils.plot_q(np.array(acc_qs), [action for action in constants.Action]))
-        image_pommerman = utils.plot_to_image(utils.image_grid_for_all_frames(acc_frames, 1))
+        image_pommerman = utils.plot_to_image(utils.show_pommerman_game(acc_frames, acc_actions))
         with file_writer_rewards.as_default():
             tf.summary.scalar('episode_rewards', np.sum(
                 episode_rewards), step=episode)
