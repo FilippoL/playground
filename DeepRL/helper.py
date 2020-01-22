@@ -319,6 +319,26 @@ def image_grid_for_all_frames(images, skipframes):
     plt.tight_layout()
     return figure
 
+def show_pommerman_game(images, actions, meanings):
+    """Return a 5x5 grid of the MNIST images as a matplotlib figure."""
+    # Create a figure to contain the plot.
+    figure = plt.figure(figsize=(10, 10))
+    skip_image = 1
+    tmp_images = images[::1]
+    grid_h = 6
+    grid_w = 6
+    nr_images = len(tmp_images)
+    for i in range(nr_images):
+        if i >= grid_h * grid_w:
+            break
+        # Start next subplot.
+        plt.subplot(grid_h, grid_w, i + 1, title=f"F:{i*skip_image}: {meanings[actions[i]]}")
+        plt.xticks([])
+        plt.yticks([])
+        plt.grid(False)
+        plt.imshow(tmp_images[i], cmap=plt.cm.gray)
+    plt.tight_layout()
+    return figure
 
 def plot_q(acc_qs, meanings):
 
