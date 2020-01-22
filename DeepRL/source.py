@@ -10,7 +10,6 @@ import numpy as np
 import tensorflow as tf
 # from tensorflow.keras import models, layers
 import psutil
-
 from helper import collect_experience_hidden_action, preprocess
 from model import create_model, create_model_faithful
 import helper as utils

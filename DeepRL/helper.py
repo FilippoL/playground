@@ -259,8 +259,8 @@ def train(approximator_model, target_model, experience_batch, importance, batch_
 
     # Gather rewards for each batch item
     set_of_batch_rewards = tf.constant([exp[1] for exp in experience_batch], dtype=next_q_values.dtype)
-
-    next_q = set_of_batch_rewards + (discount_rate * tf.reduce_max(next_q_values, axis=1))
+    is_terminal = tf.constant([0 if exp[3] else 1 for exp in experience_batch], dtype=tf.float32)
+    next_q = set_of_batch_rewards + ((discount_rate * tf.reduce_max(next_q_values, axis=1)) * is_terminal)
     history = approximator_model.fit([set_of_batch_initial_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback], sample_weight=importance)
     return history
 
