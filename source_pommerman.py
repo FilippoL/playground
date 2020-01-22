@@ -12,8 +12,9 @@ from tensorflow.keras import models, layers
 
 import pommerman
 from DeepRL.sampling import prioritized_experience_sampling_3
-from DeepRL.utils import plot_to_image, image_grid_pommerman
+from DeepRL.helper import plot_to_image, image_grid_pommerman
 from pommerman import agents, constants
+import DeepRL.helper as utils
 
 # =========== HELPER FUNCTIONS =========== #
 take_sample = prioritized_experience_sampling_3
@@ -110,7 +111,7 @@ def main():
     ACTION_SPACE = env.action_space.n
     TIME_CHANNELS_SIZE = 1
     INPUT_SHAPE = list(env.get_observation_space()) + [TIME_CHANNELS_SIZE]
-    BATCH_SIZE = 250
+    BATCH_SIZE = 4
     N = BATCH_SIZE
     N_EPISODES = 1000
     EXPLORATION_BASE = 1.02
@@ -184,8 +185,9 @@ def main():
 
         episode_rewards = []
         frame_cnt = 0
-
+        acc_qs = []
         acc_actions = []
+        # acc_actions = []
         action_str = ""
 
         while not done:
@@ -203,6 +205,7 @@ def main():
                 q_values = approximator_model.predict(
                     [tf.reshape(init_state, [1] + INPUT_SHAPE), init_mask])
                 action = np.argmax(q_values)
+                acc_qs.append(q_values)
                 actions_all_agents[0] = action
 
             # print(
@@ -225,7 +228,7 @@ def main():
         memory_length = len(D)
         print(f"Number of frames in memory {memory_length}")
         # experience_batch = take_sample(D, approximator_model, target_model, BATCH_SIZE, ACTION_SPACE)
-        ids = take_sample(D, BATCH_SIZE)
+        ids, importance = take_sample(D, BATCH_SIZE)
         experience_batch = [(D[idx], D[idx + 1]) if idx <
                             memory_length - 1 else (D[idx - 1], D[idx]) for idx in ids]
 
@@ -276,7 +279,7 @@ def main():
         # print("------"*15)
 
         history = approximator_model.fit(
-            [set_of_batch_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback])
+            [set_of_batch_states, set_of_batch_actions], next_q, verbose=1, callbacks=[tensorflow_callback], sample_weights=importance)
 
         for idx, exp in enumerate(experience_batch):
             exp[0][3] = td_error[idx]
@@ -286,8 +289,7 @@ def main():
         time_end = np.round(time.time() - start_time, 2)
         memory_usage = process.memory_info().rss
         print(f"Current memory consumption is {memory_usage}")
-        print(
-            f"Loss of episode {episode} is {loss} and took {time_end} seconds")
+        print(f"Loss of episode {episode} is {loss} and took {time_end} seconds")
         random_experience_idx = random.choice(range(len(experience_batch) - 1))
         random_experience = experience_batch[random_experience_idx][0]
         random_experience_next = experience_batch[random_experience_idx][1]
@@ -295,6 +297,7 @@ def main():
         # print(tmp.shape)
         episode_image = plot_to_image(
             image_grid_pommerman(random_experience, random_experience_next, [action for action in constants.Action]))
+        image_qs = utils.plot_to_image(utils.plot_q(acc_qs, [action for action in constants.Action]))
         with file_writer_rewards.as_default():
             tf.summary.scalar('episode_rewards', np.sum(
                 episode_rewards), step=episode)
@@ -307,6 +310,7 @@ def main():
             tf.summary.scalar('episode_frames_per_sec', np.round(
                 frame_cnt / time_end, 2), step=episode)
             tf.summary.histogram('q-values', next_q_values, step=episode)
+            tf.summary.image('q-values-over-time', image_qs, step=episode)
 
             tf.summary.scalar('episode_mem_usage_in_GB', np.round(
                 memory_usage / 1024 / 1024 / 1024), step=episode)
