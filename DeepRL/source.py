@@ -19,8 +19,8 @@ import sampling
 process = psutil.Process(os.getpid())
 
 
-collect_experience = collect_experience_hidden_action_faithful
-take_sample = sampling.prioritized_experience_sampling_3
+collect_experience = collect_experience_hidden_action
+take_sample = sampling.prioritized_experience_sampling
 # take_sample = sampling.uniform_sampling
 # take_sample = sampling.random_sampling
 
