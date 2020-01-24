@@ -152,7 +152,7 @@ def main():
                 [tf.reshape(init_state, [1] + INPUT_SHAPE), init_mask])
 
             action = np.argmax(q_values)
-            print(q_values)
+            # print(q_values)
             # print(
             #     f"Action taken: {actions_available[action]}") if action_str != f"Action taken: {actions_available[action]}" else None
 
