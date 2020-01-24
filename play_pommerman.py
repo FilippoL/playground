@@ -70,7 +70,7 @@ def create_model(input_shape, action_space):
 
 
 def save_json(accumulated_frames, episode_rewards):
-    stats_path = f"./stats/{now}_SimpleAgent.json"
+    stats_path = f"./stats/{now}_OurAgent.json"
 
     data = {}
     data['frames_per_episode'] = accumulated_frames
@@ -109,7 +109,7 @@ def main():
     INPUT_SHAPE = list(env.get_observation_space()) + [TIME_CHANNELS_SIZE]
     N_EPISODES = 10000
 
-    MODEL_PATH = "models/20200119-121818"
+    MODEL_PATH = "models/20200122-104419"
     latest = tf.train.latest_checkpoint(MODEL_PATH)
     print(f"Loading model from {latest}")
 
@@ -138,6 +138,7 @@ def main():
         frame_cnt = 0
         accumulated_reward = 0
         action_str = ""
+
         while not done:
             frame_cnt += 1
 
@@ -152,14 +153,15 @@ def main():
 
             action = np.argmax(q_values)
             print(q_values)
-            print(
-                f"Action taken: {actions_available[action]}") if action_str != f"Action taken: {actions_available[action]}" else None
+            # print(
+            #     f"Action taken: {actions_available[action]}") if action_str != f"Action taken: {actions_available[action]}" else None
 
             actions_all_agents[0] = action
             ## - Until here, when you want to use a Random/SimpleAgent instead - ##
 
             state_obs, reward, done, info, pixels = env.step2(
                 actions_all_agents)
+            state = preprocess(pixels)
             accumulated_reward += reward[0]
             action_str = f"Action taken: {actions_available[action]}"
 
