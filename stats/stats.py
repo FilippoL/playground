@@ -11,7 +11,7 @@ with open('stats/20200123-181808_RandomAgent.json', 'r') as f:
 with open('stats/20200123-191335_SimpleAgent.json', 'r') as f:
     stats_dict_simple = json.load(f)
 
-with open('stats/20200124-161546_OurAgent.json', 'r') as f:
+with open('stats/combined_OurAgent.json', 'r') as f:
     stats_dict_our = json.load(f)
 
 frames_list_random = stats_dict_random['frames_per_episode']
