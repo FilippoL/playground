@@ -32,22 +32,22 @@ rewards_list_our_win = [1 if reward >=
                         1 else 0 for reward in rewards_list_our]
 
 z_test_random_simple = stests.ztest(
-    x1=rewards_list_random_win, x2=rewards_list_simple_win, alternative='two-sided')
+    x1=rewards_list_our_win, x2=rewards_list_simple_win, alternative='two-sided')
 z_test_random_our = stests.ztest(
     x1=rewards_list_random_win, x2=rewards_list_our_win, alternative='two-sided')
 
-print("Z-test for RandomAgent/SimpleAgent (statistic, p-value):")
+print("Z-test for Our Agent/SimpleAgent (statistic, p-value):")
 print(z_test_random_simple)
 print("Z-test for RandomAgent/Our Agent (statistic, p-value):")
 print(z_test_random_our)
 
 # Calculating the KS statistic
-ks_test_random_simple = ks_2samp(frames_list_random, frames_list_simple)
 ks_test_random_our = ks_2samp(frames_list_random, frames_list_our)
+ks_test_simple_our = ks_2samp(frames_list_simple, frames_list_our)
 
 print("\n")
-print(ks_test_random_simple)
 print(ks_test_random_our)
+print(ks_test_simple_our)
 print("\n")
 
 # Calculating number of wins

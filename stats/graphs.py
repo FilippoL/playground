@@ -21,13 +21,14 @@ frames_list_our = stats_dict_our['frames_per_episode']
 # Plotting
 hist_rand = plt.hist(frames_list_random, histtype='stepfilled', edgecolor='black', bins=range(0, 800, 10),
                      facecolor='blue', alpha=0.3)
-hist_simp = plt.hist(frames_list_simple, histtype='stepfilled', edgecolor='black', bins=range(0, 800, 10),
+hist_simp = plt.hist(frames_list_our, histtype='stepfilled', edgecolor='black', bins=range(0, 800, 10),
                      facecolor='green', alpha=0.3)
 
+# plt.xlim((0, 800))
 plt.title('Frame count distribution')
 plt.xlabel('Frame count')
 plt.ylabel('Frequency')
 
-plt.legend(("Random Agent", "Simple Agent"))
+plt.legend(("Random Agent", "Our Agent"))
 
 plt.show()
